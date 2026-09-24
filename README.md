@@ -2,7 +2,7 @@
 
 MultiAuto - multi-tenant платформа для записи клиентов на автомойку через Telegram Bot и Telegram Mini App с отдельной защищенной административной частью для администраторов и владельцев автомоек.
 
-Текущий этап проекта: Backend Foundation на Django. Telegram Bot, Mini App, booking engine, уведомления и frontend будут добавляться следующими этапами.
+Текущий этап проекта: Django backend, Telegram Bot integration и базовый Telegram Mini App на React.
 
 ## Цель
 
@@ -52,6 +52,9 @@ Organization
 - Django 5.1
 - Django REST Framework 3.15
 - aiogram 3
+- React
+- TypeScript
+- Vite
 - PostgreSQL
 - psycopg 3
 - python-dotenv
@@ -76,6 +79,15 @@ MultiAuto/
       organizations/
       branches/
       telegram_bot/
+  frontend/
+    src/
+      api/
+      components/
+      hooks/
+      layouts/
+      pages/
+      types/
+      utils/
   requirements/
     base.txt
     development.txt
@@ -117,9 +129,28 @@ POSTGRES_USER=multiauto
 POSTGRES_PASSWORD=multiauto
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
+TELEGRAM_BOT_TOKEN=your-bot-token-from-botfather
+TELEGRAM_BOT_USERNAME=your_bot_username
+TELEGRAM_MINI_APP_URL=http://localhost:5173
+TELEGRAM_DEFAULT_ORGANIZATION_SLUG=clean-auto
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
 Основная база данных проекта - PostgreSQL. Можно использовать `DATABASE_URL` вместо отдельных `POSTGRES_*` переменных.
+
+Где брать значения:
+
+- `SECRET_KEY` - локально можно сгенерировать любой длинный случайный ключ; в production хранится в secret manager.
+- `POSTGRES_*` - значения вашей локальной или production PostgreSQL базы.
+- `DATABASE_URL` - альтернатива `POSTGRES_*`, обычно дает hosting provider или администратор базы.
+- `TELEGRAM_BOT_TOKEN` - выдает BotFather после создания бота.
+- `TELEGRAM_BOT_USERNAME` - username созданного Telegram-бота.
+- `TELEGRAM_MINI_APP_URL` - URL Vite dev server локально или HTTPS URL production Mini App.
+- `TELEGRAM_DEFAULT_ORGANIZATION_SLUG` - slug организации из таблицы `organizations`, нужен для локального запуска без deep link.
+- `CORS_ALLOWED_ORIGINS` и `CSRF_TRUSTED_ORIGINS` - frontend origins, которым разрешено обращаться к backend.
+
+`.env.example` хранит только шаблон и безопасные примеры. Реальные пароли, токены и production hosts пишутся в локальный `.env`, который уже исключен в `.gitignore`.
 
 Выполнить проверки и миграции:
 
@@ -148,6 +179,26 @@ python manage.py test --settings=config.settings.test
 ```
 
 `config.settings.test` использует локальную SQLite-базу только для быстрых model tests, когда PostgreSQL-сервер не поднят. Development и production settings используют PostgreSQL.
+
+## Локальный запуск frontend
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Создать `frontend/.env` на основе `frontend/.env.example`:
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+Сборка:
+
+```powershell
+npm run build
+```
 
 ## Telegram client auth
 

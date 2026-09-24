@@ -43,6 +43,19 @@
 
 Эти endpoint'ы не принимают `user_id` из URL или query params для выбора владельца данных.
 
+Frontend Mini App использует:
+
+- `POST /api/v1/client/auth/telegram` для обмена Telegram `initData` на DRF token;
+- `GET /api/my-profile/` для загрузки профиля;
+- `GET /api/my-cars/` для текущего списка автомобилей;
+- `GET /api/my-bookings/` для текущего списка записей.
+
+Все запросы после авторизации отправляются с:
+
+```text
+Authorization: Token <token>
+```
+
 ### Автомобили клиента
 
 | Method | Endpoint | Назначение |

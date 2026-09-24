@@ -114,6 +114,33 @@ AND cars.customer_id = auth.customer_id
 
 Текущие endpoint'ы `/api/me/`, `/api/my-profile/`, `/api/my-cars/`, `/api/my-bookings/` не принимают `user_id` для выбора владельца данных. Пользователь определяется только из token auth.
 
+## CORS и CSRF для Mini App
+
+Backend разрешает frontend origins через environment variables:
+
+```text
+CORS_ALLOWED_ORIGINS
+CSRF_TRUSTED_ORIGINS
+```
+
+Для local development обычно используется:
+
+```text
+http://localhost:5173
+```
+
+Постоянное `CORS_ALLOW_ALL_ORIGINS = True` не используется. Production origins должны быть перечислены явно.
+
+## Frontend secrets
+
+Во frontend `.env` допускаются только публичные значения, например:
+
+```text
+VITE_API_URL
+```
+
+`TELEGRAM_BOT_TOKEN`, database credentials, Django `SECRET_KEY` и другие секреты никогда не передаются в React/Vite приложение.
+
 ## API security
 
 Требования:

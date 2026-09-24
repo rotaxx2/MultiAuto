@@ -4,6 +4,16 @@
 
 Telegram Mini App является клиентским интерфейсом для записи на автомойку. Все критичные проверки выполняет backend.
 
+Текущая реализация Mini App:
+
+- React + TypeScript + Vite;
+- API layer в `frontend/src/api`;
+- Telegram WebApp helpers в `frontend/src/utils/telegram.ts`;
+- страницы `Home`, `Profile`, `Cars`, `Bookings`;
+- нижняя навигация для мобильного экрана Telegram;
+- использование Telegram theme variables;
+- базовые состояния loading, error, empty и unauthorized.
+
 ## Первый запуск
 
 1. Клиент открывает Mini App из Telegram Bot.
@@ -11,6 +21,8 @@ Telegram Mini App является клиентским интерфейсом �
 3. Mini App отправляет `initData` в backend.
 4. Backend проверяет Telegram auth и возвращает session token.
 5. Mini App загружает главную страницу.
+
+Frontend отправляет на backend только `initData` и `start_param`. Он не отправляет произвольный `telegram_id` как источник истины.
 
 ## Главная страница
 
@@ -113,6 +125,8 @@ Mini App должен обрабатывать:
 - запись нельзя перенести из текущего статуса;
 - ошибка Telegram authentication.
 
+Если приложение открыто вне Telegram и нет сохраненного server-side token, Mini App показывает unauthorized state с просьбой открыть приложение через Telegram-бота.
+
 ## Что Mini App не делает
 
 - не хранит роль как источник истины;
@@ -120,3 +134,13 @@ Mini App должен обрабатывать:
 - не показывает чужие записи;
 - не принимает административные решения;
 - не обходит backend validation.
+
+## Environment
+
+Frontend использует:
+
+```text
+VITE_API_URL
+```
+
+Это публичный адрес backend API. Секреты Telegram Bot в frontend environment не передаются.

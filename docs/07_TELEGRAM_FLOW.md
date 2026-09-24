@@ -70,6 +70,14 @@ POST /api/v1/client/auth/telegram
 
 Backend проверяет подпись Telegram init data и создает client session.
 
+URL кнопки берется из environment variable:
+
+```text
+TELEGRAM_MINI_APP_URL
+```
+
+Локально это обычно `http://localhost:5173`. Для настоящего Telegram Mini App в production потребуется HTTPS URL.
+
 На текущем этапе client session реализована через DRF TokenAuthentication:
 
 ```text
