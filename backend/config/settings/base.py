@@ -43,6 +43,11 @@ INSTALLED_APPS = [
     "apps.organizations",
     "apps.branches",
     "apps.accounts",
+    "apps.cars",
+    "apps.services",
+    "apps.workstations",
+    "apps.schedules",
+    "apps.bookings",
     "apps.telegram_bot",
 ]
 

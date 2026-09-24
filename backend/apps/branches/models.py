@@ -13,6 +13,7 @@ class Branch(models.Model):
     name = models.CharField(max_length=255)
     address = models.TextField()
     phone = models.CharField(max_length=32, blank=True)
+    timezone = models.CharField(max_length=64, default="UTC")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
