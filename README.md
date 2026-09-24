@@ -51,6 +51,7 @@ Organization
 - Python 3.12+
 - Django 5.1
 - Django REST Framework 3.15
+- aiogram 3
 - PostgreSQL
 - psycopg 3
 - python-dotenv
@@ -74,6 +75,7 @@ MultiAuto/
       accounts/
       organizations/
       branches/
+      telegram_bot/
   requirements/
     base.txt
     development.txt
@@ -133,6 +135,12 @@ python manage.py migrate
 python manage.py runserver
 ```
 
+Запустить Telegram Bot polling:
+
+```powershell
+python manage.py run_telegram_bot
+```
+
 Запустить тесты:
 
 ```powershell
@@ -140,6 +148,27 @@ python manage.py test --settings=config.settings.test
 ```
 
 `config.settings.test` использует локальную SQLite-базу только для быстрых model tests, когда PostgreSQL-сервер не поднят. Development и production settings используют PostgreSQL.
+
+## Telegram client auth
+
+Mini App отправляет Telegram `initData` на:
+
+```text
+POST /api/v1/client/auth/telegram
+```
+
+Backend проверяет подпись Telegram, создает или находит `CLIENT` и возвращает DRF token. Дальше клиентские API вызываются с заголовком:
+
+```text
+Authorization: Token <token>
+```
+
+Базовые endpoint'ы текущего этапа:
+
+- `GET /api/me/`
+- `GET /api/my-profile/`
+- `GET /api/my-cars/`
+- `GET /api/my-bookings/`
 
 ## Что намеренно не входит в MVP
 

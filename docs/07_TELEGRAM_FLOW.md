@@ -28,6 +28,15 @@ Telegram Bot нужен для:
 6. Backend создает или обновляет `customer`.
 7. Bot отправляет сообщение с кнопкой открытия Mini App.
 
+Реализация текущего этапа использует custom Django `User` как клиентскую учетную запись. При `/start` backend:
+
+- ищет `User` по `telegram_id`;
+- если пользователя нет, создает `User` с ролью `CLIENT`;
+- устанавливает unusable password, потому что клиент не использует email/password;
+- обновляет `username`, `first_name`, `last_name`, если Telegram прислал новые значения;
+- связывает пользователя с активной `Organization`;
+- не создает роли сотрудников или отдельные staff-аккаунты.
+
 ## Определение организации
 
 Для MVP возможны два варианта:
@@ -42,6 +51,8 @@ Telegram Bot нужен для:
 ```
 
 Backend должен проверить, что организация активна. Если организация не найдена или выключена, бот показывает нейтральное сообщение об ошибке.
+
+Для development также предусмотрен fallback через environment variable `TELEGRAM_DEFAULT_ORGANIZATION_SLUG`, чтобы локально запускать одного бота без deep link.
 
 ## Открытие Mini App
 
@@ -59,6 +70,12 @@ POST /api/v1/client/auth/telegram
 
 Backend проверяет подпись Telegram init data и создает client session.
 
+На текущем этапе client session реализована через DRF TokenAuthentication:
+
+```text
+Authorization: Token <token>
+```
+
 ## Telegram authentication
 
 Backend должен:
@@ -69,6 +86,23 @@ Backend должен:
 - находить или создавать `customer`;
 - связывать клиента с `organization_id`;
 - выпускать session token для Client API.
+
+Реализованный endpoint:
+
+```text
+POST /api/v1/client/auth/telegram
+```
+
+Тело запроса:
+
+```json
+{
+  "init_data": "<Telegram Mini App initData>",
+  "start_param": "org_clean-auto"
+}
+```
+
+`start_param` используется только для определения организации при первом создании клиента. Дальнейшие клиентские запросы определяют пользователя по server-side token.
 
 Mini App не должен доверять данным Telegram без проверки backend.
 

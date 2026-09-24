@@ -23,6 +23,15 @@ Backend должен:
 
 Нельзя доверять Telegram user data, если подпись не проверена backend.
 
+Реализация текущего этапа:
+
+- проверка `initData` находится на backend;
+- подпись проверяется по Telegram Bot Token через HMAC SHA-256 по алгоритму Telegram Mini Apps;
+- `auth_date` ограничен настройкой `TELEGRAM_AUTH_MAX_AGE_SECONDS`;
+- после успешной проверки backend выдает DRF token;
+- клиентские API принимают только `Authorization: Token <token>`;
+- `telegram_id` из обычного request body, query params или URL не используется как источник истины.
+
 ## Admin authentication
 
 Для `ADMIN` и `OWNER`:
@@ -51,6 +60,12 @@ Backend проверяет права на каждом защищенном end
 - объект принадлежит `organization_id`;
 - клиент обращается только к своим объектам;
 - admin не выходит за границы организации.
+
+Для клиентских endpoint'ов текущего этапа добавлен permission class `IsClient`. Он требует:
+
+- authenticated user;
+- `is_active = true`;
+- `role = CLIENT`.
 
 ## RBAC
 
@@ -96,6 +111,8 @@ cars.id = car_id
 AND cars.organization_id = auth.organization_id
 AND cars.customer_id = auth.customer_id
 ```
+
+Текущие endpoint'ы `/api/me/`, `/api/my-profile/`, `/api/my-cars/`, `/api/my-bookings/` не принимают `user_id` для выбора владельца данных. Пользователь определяется только из token auth.
 
 ## API security
 

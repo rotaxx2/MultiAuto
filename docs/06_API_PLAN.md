@@ -17,12 +17,31 @@
 | `POST` | `/api/v1/client/auth/telegram` | Проверить Telegram Mini App init data и выдать client session token. |
 | `POST` | `/api/v1/client/auth/logout` | Завершить client session. |
 
+Реализовано на текущем этапе:
+
+- `POST /api/v1/client/auth/telegram` принимает `init_data` и опциональный `start_param`;
+- backend проверяет подпись Telegram `initData`;
+- backend проверяет срок действия `auth_date`;
+- backend находит или создает `User` с ролью `CLIENT`;
+- backend возвращает DRF token для заголовка `Authorization: Token <token>`.
+
 ### Профиль клиента
 
 | Method | Endpoint | Назначение |
 |---|---|---|
 | `GET` | `/api/v1/client/me` | Получить профиль клиента. |
 | `PATCH` | `/api/v1/client/me` | Обновить доступные поля профиля. |
+
+Дополнительно для текущей интеграции доступны короткие клиентские endpoint'ы:
+
+| Method | Endpoint | Назначение |
+|---|---|---|
+| `GET` | `/api/me/` | Получить профиль текущего клиента. |
+| `GET` | `/api/my-profile/` | Получить профиль текущего клиента. |
+| `GET` | `/api/my-cars/` | Заготовка списка автомобилей текущего клиента. Пока возвращает пустой список до реализации cars domain. |
+| `GET` | `/api/my-bookings/` | Заготовка списка записей текущего клиента. Пока возвращает пустой список до реализации bookings domain. |
+
+Эти endpoint'ы не принимают `user_id` из URL или query params для выбора владельца данных.
 
 ### Автомобили клиента
 
