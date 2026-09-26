@@ -84,6 +84,7 @@ audit
 - `Branch` имеет много `Workstation`.
 - `Branch` имеет расписание и исключения расписания.
 - `Organization` имеет много `Service`.
+- На текущем этапе `Service` принадлежит `Organization`, а не конкретному `Branch`. Все активные филиалы организации показывают общий каталог услуг. Это сохраняет простоту MVP; филиальная доступность услуг может быть добавлена отдельной связующей таблицей позже.
 - `Customer` принадлежит `Organization`.
 - `Car` принадлежит `Customer` и `Organization`.
 - `Booking` принадлежит `Organization`, `Branch`, `Customer`, `Car`, `Service`.
@@ -139,4 +140,16 @@ MultiAuto/
   README.md
 ```
 
-На текущем этапе папки `backend`, `mini-app`, `admin-app` и `bot` не создаются как реализация. Они описывают целевую структуру.
+На текущем этапе реализованы `backend` и `frontend` Mini App. Отдельная production admin app пока остается целевой частью архитектуры.
+
+## Реализованный фундамент автомойки
+
+В backend добавлены приложения:
+
+- `cars` - автомобили клиента, ownership через `User`.
+- `services` - услуги организации, цена через `DecimalField`.
+- `workstations` - рабочие боксы филиала.
+- `schedules` - стандартные рабочие часы и исключения расписания.
+- `bookings` - booking engine, создание записей, availability, отмена и admin status updates.
+
+Все административные queryset'ы фильтруются по `request.user.organization`. Клиентские queryset'ы берут пользователя из token auth и не принимают `user_id` от frontend.

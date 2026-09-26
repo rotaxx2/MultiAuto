@@ -114,6 +114,24 @@ AND cars.customer_id = auth.customer_id
 
 Текущие endpoint'ы `/api/me/`, `/api/my-profile/`, `/api/my-cars/`, `/api/my-bookings/` не принимают `user_id` для выбора владельца данных. Пользователь определяется только из token auth.
 
+Для `Car` object-level проверка выполняется через queryset:
+
+```text
+cars.owner_id = request.user.id
+```
+
+Для `Service`, `Workstation`, `BusinessHour`, `ScheduleException` административные queryset'ы ограничены:
+
+```text
+object.organization_id = request.user.organization_id
+```
+
+Если организация получается через филиал, проверка идет через:
+
+```text
+object.branch.organization_id = request.user.organization_id
+```
+
 ## CORS и CSRF для Mini App
 
 Backend разрешает frontend origins через environment variables:
@@ -190,6 +208,19 @@ VITE_API_URL
 - проверяет активность бокса;
 - проверяет пересечения;
 - выполняет операцию в транзакции.
+
+Stage 6:
+
+- `CLIENT` создает запись через `POST /api/bookings/`.
+- Backend игнорирует/не принимает `organization_id`, `client_id`, `workstation_id`, `end_at`, `status`, `price`.
+- `end_at` рассчитывается из `Service.duration_minutes`.
+- `price` сохраняется как snapshot из `Service.price`.
+- `workstation` выбирается backend внутри транзакции.
+- Активные `Workstation` филиала блокируются через `select_for_update()`, затем повторно проверяются пересечения.
+- Пересечение определяется условием `existing.start_at < new.end_at AND existing.end_at > new.start_at`.
+- `CANCELLED`, `COMPLETED`, `NO_SHOW` не блокируют новые слоты.
+- `/api/my-bookings/{id}/` scoped только по текущему клиенту.
+- `/api/admin/bookings/{id}/` scoped только по `request.user.organization`.
 
 ## Administrative endpoint protection
 

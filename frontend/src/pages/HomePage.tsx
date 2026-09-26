@@ -20,7 +20,7 @@ export function HomePage({ user, onNavigate }: HomePageProps) {
       </div>
 
       <div className="action-grid">
-        <button className="action-card primary" type="button">
+        <button className="action-card primary" type="button" onClick={() => onNavigate('booking-create')}>
           <CalendarPlus size={24} aria-hidden="true" />
           <span>Записаться на мойку</span>
           <small>Скоро подключим выбор услуги и времени</small>

@@ -15,6 +15,8 @@ from apps.services.models import Service
 from apps.workstations.models import Workstation
 
 from ..models import BLOCKING_BOOKING_STATUSES, Booking, BookingStatus
+from ..models import BookingReminder, BookingReminderKind
+from .availability_service import is_booking_date_allowed
 
 
 CLIENT_ALLOWED_CANCEL_STATUSES = {BookingStatus.PENDING}
@@ -65,6 +67,8 @@ def validate_inside_working_hours(branch: Branch, start_at: datetime, end_at: da
         raise ValidationError("Booking must start and end on the same local date.")
 
     schedule = get_branch_schedule(branch, local_start.date())
+    if not is_booking_date_allowed(branch, local_start.date()):
+        raise ValidationError("Booking date is outside the allowed range.")
     if schedule.is_closed or not schedule.opening_time or not schedule.closing_time:
         raise ValidationError("Branch is closed on this date.")
     if local_start.time() < schedule.opening_time or local_end.time() > schedule.closing_time:
@@ -85,6 +89,8 @@ def create_booking(
     end_at = start_at + timedelta(minutes=service.duration_minutes)
     if end_at <= start_at:
         raise ValidationError("Booking end time must be later than start time.")
+    if start_at <= timezone.now():
+        raise ValidationError("Booking start time must be in the future.")
 
     validate_booking_inputs(client, branch, car, service)
     validate_inside_working_hours(branch, start_at, end_at)
@@ -99,7 +105,7 @@ def create_booking(
 
     for workstation in workstations:
         if not has_overlap(workstation, start_at, end_at):
-            return Booking.objects.create(
+            booking = Booking.objects.create(
                 organization=client.organization,
                 branch=branch,
                 client=client,
@@ -112,8 +118,51 @@ def create_booking(
                 price=service.price,
                 client_comment=client_comment,
             )
+            transaction.on_commit(lambda booking_id=booking.id: finalize_created_booking(booking_id))
+            return booking
 
     raise ValidationError("No workstations are available for selected time.")
+
+
+def format_booking_message(booking: Booking, prefix: str) -> str:
+    branch_tz = ZoneInfo(booking.branch.timezone)
+    local_start = booking.start_at.astimezone(branch_tz)
+    lines = [
+        prefix,
+        f"Дата: {local_start:%d.%m.%Y}",
+        f"Время: {local_start:%H:%M}",
+        f"Услуга: {booking.service.name}",
+        f"Автомобиль: {booking.car.brand} {booking.car.model} {booking.car.license_plate}",
+        f"Адрес: {booking.branch.address}",
+        f"Статус: {booking.get_status_display()}",
+    ]
+    return "\n".join(lines)
+
+
+def create_booking_reminders(booking: Booking) -> None:
+    reminders = (
+        (BookingReminderKind.DAY_BEFORE, booking.start_at - timedelta(hours=24)),
+        (BookingReminderKind.HOUR_BEFORE, booking.start_at - timedelta(hours=1)),
+    )
+    now = timezone.now()
+    for kind, scheduled_at in reminders:
+        if scheduled_at > now:
+            BookingReminder.objects.get_or_create(
+                booking=booking,
+                kind=kind,
+                defaults={"scheduled_at": scheduled_at},
+            )
+
+
+def finalize_created_booking(booking_id) -> None:
+    from apps.telegram_bot.notifications import send_telegram_message
+
+    booking = Booking.objects.select_related("branch", "car", "client", "service").get(id=booking_id)
+    create_booking_reminders(booking)
+    send_telegram_message(
+        booking.client.telegram_id,
+        format_booking_message(booking, "Запись успешно создана!"),
+    )
 
 
 @transaction.atomic

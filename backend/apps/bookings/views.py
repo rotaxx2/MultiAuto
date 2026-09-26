@@ -15,7 +15,7 @@ from apps.telegram_bot.permissions import IsClient
 
 from .models import Booking
 from .serializers import AdminBookingUpdateSerializer, BookingCreateSerializer, BookingSerializer
-from .services.availability_service import get_available_slots
+from .services.availability_service import get_allowed_booking_dates, get_available_slots
 from .services.booking_service import cancel_client_booking
 
 
@@ -76,8 +76,32 @@ class BranchAvailabilityView(APIView):
                     {
                         "start_at": slot.start_at.isoformat(),
                         "end_at": slot.end_at.isoformat(),
+                        "total_workstations": slot.total_workstations,
+                        "occupied_workstations": slot.occupied_workstations,
+                        "free_workstations": slot.free_workstations,
+                        "is_available": slot.is_available,
                     }
                     for slot in slots
+                ],
+            }
+        )
+
+
+class BranchAvailableDatesView(APIView):
+    permission_classes = [IsClient]
+
+    def get(self, request, branch_id):
+        branch = get_object_or_404(Branch.objects.filter(organization=request.user.organization, is_active=True), id=branch_id)
+        return Response(
+            {
+                "timezone": branch.timezone,
+                "dates": [
+                    {
+                        "date": item.date.isoformat(),
+                        "label": item.label,
+                        "is_available": item.is_available,
+                    }
+                    for item in get_allowed_booking_dates(branch)
                 ],
             }
         )

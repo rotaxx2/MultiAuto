@@ -178,6 +178,123 @@ button {
   font-weight: 700;
 }
 
+.primary-button.compact {
+  min-height: 40px;
+  margin-top: 0;
+}
+
+.secondary-button,
+.danger-button {
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--tg-theme-text-color, #17212b);
+  background: var(--tg-theme-secondary-bg-color, #ffffff);
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: 8px;
+  font-weight: 650;
+}
+
+.danger-button {
+  color: #b42318;
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--tg-theme-secondary-bg-color, #ffffff);
+  border: 1px solid rgba(127, 127, 127, 0.16);
+  border-radius: 8px;
+}
+
+.form input,
+.form select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--tg-theme-text-color, #17212b);
+  background: var(--tg-theme-bg-color, #f4f6f8);
+  border: 1px solid rgba(127, 127, 127, 0.2);
+  border-radius: 8px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  color: var(--tg-theme-hint-color, #667085);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.inline-error {
+  margin: 0;
+  color: #b42318;
+}
+
+.muted {
+  color: var(--tg-theme-hint-color, #667085);
+}
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.date-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.date-button,
+.slot-button {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 54px;
+  padding: 6px;
+  color: var(--tg-theme-text-color, #17212b);
+  background: var(--tg-theme-secondary-bg-color, #ffffff);
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.date-button small,
+.slot-button small {
+  color: var(--tg-theme-hint-color, #667085);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.date-button:disabled {
+  opacity: 0.48;
+}
+
+.date-button.active,
+.slot-button.active {
+  color: var(--tg-theme-button-text-color, #ffffff);
+  background: var(--tg-theme-button-color, #2481cc);
+}
+
+.date-button.active small,
+.slot-button.active small {
+  color: inherit;
+  opacity: 0.86;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;
@@ -189,6 +306,10 @@ button {
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   background: var(--tg-theme-secondary-bg-color, #ffffff);
   border-top: 1px solid rgba(127, 127, 127, 0.18);
+}
+
+.bottom-nav.six-items {
+  grid-template-columns: repeat(7, 1fr);
 }
 
 .nav-item {
@@ -206,7 +327,7 @@ button {
 .nav-item span {
   max-width: 100%;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;

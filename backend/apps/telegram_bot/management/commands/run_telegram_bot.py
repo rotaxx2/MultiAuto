@@ -20,4 +20,5 @@ class Command(BaseCommand):
         bot = create_bot()
         dispatcher = create_dispatcher()
         logger.info("Starting Telegram bot polling.")
+        await bot.delete_webhook(drop_pending_updates=True)
         await dispatcher.start_polling(bot)

@@ -16,7 +16,7 @@ from apps.accounts.models import User, UserRole
 from apps.organizations.models import Organization
 
 from .auth import validate_telegram_init_data
-from .bot import handle_start
+from .bot import build_mini_app_keyboard, handle_start
 from .services import TelegramUserData, get_or_create_client_from_telegram
 
 
@@ -47,6 +47,19 @@ class TelegramStartTests(TestCase):
         self.assertEqual(user.organization, self.organization)
         self.assertFalse(user.has_usable_password())
         message.answer.assert_awaited_once()
+
+    @override_settings(TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
+    def test_mini_app_keyboard_uses_web_app_button(self) -> None:
+        markup = build_mini_app_keyboard().as_markup()
+
+        button = markup.inline_keyboard[0][0]
+        self.assertEqual(button.text, "Открыть запись")
+        self.assertEqual(button.web_app.url, "https://example.com/mini-app")
+
+    @override_settings(TELEGRAM_MINI_APP_URL="http://localhost:5173")
+    def test_mini_app_keyboard_rejects_non_https_url(self) -> None:
+        with self.assertRaisesMessage(ValueError, "absolute HTTPS URL"):
+            build_mini_app_keyboard()
 
     @override_settings(TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
     def test_repeated_start_does_not_create_duplicate(self) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import CommandStart
@@ -15,12 +16,25 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+def get_mini_app_url() -> str:
+    mini_app_url = settings.TELEGRAM_MINI_APP_URL.strip()
+    parsed_url = urlparse(mini_app_url)
+
+    if not mini_app_url:
+        raise ValueError("TELEGRAM_MINI_APP_URL is not configured.")
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        raise ValueError("TELEGRAM_MINI_APP_URL must be an absolute HTTPS URL for Telegram Mini Apps.")
+
+    return mini_app_url
+
+
 def build_mini_app_keyboard() -> InlineKeyboardBuilder:
+    mini_app_url = get_mini_app_url()
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
             text="Открыть запись",
-            web_app=WebAppInfo(url=settings.TELEGRAM_MINI_APP_URL),
+            web_app=WebAppInfo(url=mini_app_url),
         )
     )
     return builder
@@ -32,8 +46,10 @@ async def handle_start(message: Message) -> None:
         await message.answer("Не удалось определить Telegram-пользователя.")
         return
 
-    if not settings.TELEGRAM_MINI_APP_URL:
-        logger.error("TELEGRAM_MINI_APP_URL is not configured.")
+    try:
+        get_mini_app_url()
+    except ValueError as exc:
+        logger.error("%s", exc)
         await message.answer("Mini App временно недоступен. Попробуйте позже.")
         return
 

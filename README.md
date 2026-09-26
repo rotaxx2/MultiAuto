@@ -79,6 +79,10 @@ MultiAuto/
       organizations/
       branches/
       telegram_bot/
+      cars/
+      services/
+      workstations/
+      schedules/
   frontend/
     src/
       api/
@@ -160,6 +164,28 @@ python manage.py makemigrations
 python manage.py migrate
 ```
 
+Создать демо-данные, чтобы Mini App показывал филиал, услуги, боксы и доступные слоты:
+
+```powershell
+python manage.py seed_demo_data
+```
+
+Команда создает/обновляет:
+
+- `Organization` со slug `clean-auto`;
+- один активный филиал;
+- услуги `Кузов`, `Салон`, `Комплексная мойка`, `Воск`, `Химчистка`;
+- три активных бокса;
+- расписание 09:00-21:00 с понедельника по субботу, воскресенье закрыто.
+
+Для запуска без PostgreSQL во время локального просмотра можно использовать тестовую SQLite-конфигурацию:
+
+```powershell
+python manage.py migrate --settings=config.settings.test
+python manage.py seed_demo_data --settings=config.settings.test
+python manage.py runserver --settings=config.settings.test
+```
+
 Запустить Django:
 
 ```powershell
@@ -220,6 +246,21 @@ Authorization: Token <token>
 - `GET /api/my-profile/`
 - `GET /api/my-cars/`
 - `GET /api/my-bookings/`
+- `GET /api/services/`
+- `GET /api/branches/`
+- `GET /api/branches/{id}/services/`
+- `GET /api/branches/{id}/schedule/`
+- `GET /api/branches/{id}/availability/?date=YYYY-MM-DD&service_id={id}`
+- `POST /api/bookings/`
+- `GET /api/my-bookings/{id}/`
+- `POST /api/my-bookings/{id}/cancel/`
+- `GET /api/admin/bookings/`
+- `GET /api/admin/bookings/{id}/`
+- `PATCH /api/admin/bookings/{id}/`
+
+`/api/my-cars/` поддерживает `GET`, `POST`, `GET/PATCH/DELETE` по `id`. Все операции используют текущего пользователя из token auth.
+
+Booking Engine на backend рассчитывает `end_at`, назначает свободный `Workstation`, сохраняет snapshot цены из `Service.price` и проверяет пересечения в транзакции. Frontend не передает `organization_id`, `client_id`, `workstation_id`, `end_at`, `status` или `price`.
 
 ## Что намеренно не входит в MVP
 

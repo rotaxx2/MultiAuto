@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta, timezone as datetime_timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.test import TestCase
+from django.utils import timezone
+from unittest.mock import patch
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -16,7 +18,7 @@ from apps.schedules.models import BusinessHour, ScheduleException
 from apps.services.models import Service
 from apps.workstations.models import Workstation
 
-from .models import Booking, BookingStatus
+from .models import Booking, BookingReminder, BookingReminderKind, BookingStatus
 
 
 class BookingEngineTests(TestCase):
@@ -25,8 +27,11 @@ class BookingEngineTests(TestCase):
         self.other_org = Organization.objects.create(name="Other Auto", slug="other-auto")
         self.branch = Branch.objects.create(organization=self.org, name="Center", address="Main", timezone="Asia/Almaty")
         self.other_branch = Branch.objects.create(organization=self.other_org, name="Other", address="Other", timezone="Asia/Almaty")
-        BusinessHour.objects.create(branch=self.branch, weekday=3, opening_time=time(9), closing_time=time(21))
-        BusinessHour.objects.create(branch=self.other_branch, weekday=3, opening_time=time(9), closing_time=time(21))
+        self.branch_tz = ZoneInfo("Asia/Almaty")
+        self.target_date = timezone.now().astimezone(self.branch_tz).date() + timedelta(days=1)
+        for weekday in range(7):
+            BusinessHour.objects.create(branch=self.branch, weekday=weekday, opening_time=time(9), closing_time=time(21))
+            BusinessHour.objects.create(branch=self.other_branch, weekday=weekday, opening_time=time(9), closing_time=time(21))
         self.ws1 = Workstation.objects.create(branch=self.branch, name="Box 1")
         self.ws2 = Workstation.objects.create(branch=self.branch, name="Box 2")
         self.other_ws = Workstation.objects.create(branch=self.other_branch, name="Other Box")
@@ -48,7 +53,14 @@ class BookingEngineTests(TestCase):
         return client
 
     def local_dt(self, hour: int, minute: int = 0) -> str:
-        return datetime(2026, 10, 1, hour, minute, tzinfo=ZoneInfo("Asia/Almaty")).isoformat()
+        return datetime.combine(self.target_date, time(hour, minute), tzinfo=self.branch_tz).isoformat()
+
+    def local_datetime(self, hour: int, minute: int = 0, days: int = 1) -> datetime:
+        target = timezone.now().astimezone(self.branch_tz).date() + timedelta(days=days)
+        return datetime.combine(target, time(hour, minute), tzinfo=self.branch_tz)
+
+    def utc_iso(self, hour: int, minute: int = 0) -> str:
+        return self.local_datetime(hour, minute).astimezone(datetime_timezone.utc).isoformat()
 
     def payload(self, **overrides: object) -> dict:
         data = {
@@ -105,13 +117,13 @@ class BookingEngineTests(TestCase):
     def test_cannot_create_before_opening_or_after_closing_or_closed_day(self) -> None:
         self.assertEqual(self.create_booking(start_at=self.local_dt(8)).status_code, 400)
         self.assertEqual(self.create_booking(start_at=self.local_dt(20, 30)).status_code, 400)
-        ScheduleException.objects.create(branch=self.branch, date=date(2026, 10, 1), is_closed=True)
+        ScheduleException.objects.create(branch=self.branch, date=self.target_date, is_closed=True)
         self.assertEqual(self.create_booking(start_at=self.local_dt(10)).status_code, 400)
 
     def test_schedule_exception_has_priority_for_booking(self) -> None:
         ScheduleException.objects.create(
             branch=self.branch,
-            date=date(2026, 10, 1),
+            date=self.target_date,
             opening_time=time(12),
             closing_time=time(18),
         )
@@ -153,7 +165,7 @@ class BookingEngineTests(TestCase):
         self.create_booking(start_at=self.local_dt(9))
         self.create_booking(start_at=self.local_dt(9))
         response = self.auth_client(self.client_user).get(
-            f"/api/branches/{self.branch.id}/availability/?date=2026-10-01&service_id={self.long_service.id}"
+            f"/api/branches/{self.branch.id}/availability/?date={self.target_date.isoformat()}&service_id={self.long_service.id}"
         )
         self.assertEqual(response.status_code, 200)
         starts = [slot["start_at"] for slot in response.data["slots"]]
@@ -169,8 +181,8 @@ class BookingEngineTests(TestCase):
             car=self.other_car,
             service=self.service,
             workstation=self.ws2,
-            start_at=datetime(2026, 10, 1, 13, tzinfo=ZoneInfo("Asia/Almaty")),
-            end_at=datetime(2026, 10, 1, 14, tzinfo=ZoneInfo("Asia/Almaty")),
+            start_at=self.local_datetime(13),
+            end_at=self.local_datetime(14),
             price=self.service.price,
         )
         response = self.auth_client(self.client_user).get("/api/my-bookings/")
@@ -184,8 +196,8 @@ class BookingEngineTests(TestCase):
             car=self.other_car,
             service=self.service,
             workstation=self.ws2,
-            start_at=datetime(2026, 10, 1, 13, tzinfo=ZoneInfo("Asia/Almaty")),
-            end_at=datetime(2026, 10, 1, 14, tzinfo=ZoneInfo("Asia/Almaty")),
+            start_at=self.local_datetime(13),
+            end_at=self.local_datetime(14),
             price=self.service.price,
         )
         response = self.auth_client(self.client_user).get(f"/api/my-bookings/{other_booking.id}/")
@@ -200,8 +212,8 @@ class BookingEngineTests(TestCase):
             car=Car.objects.create(owner=self.other_admin, brand="Kia", model="Rio", license_plate="O111OO", color="Red"),
             service=self.other_service,
             workstation=self.other_ws,
-            start_at=datetime(2026, 10, 1, 13, tzinfo=ZoneInfo("Asia/Almaty")),
-            end_at=datetime(2026, 10, 1, 14, tzinfo=ZoneInfo("Asia/Almaty")),
+            start_at=self.local_datetime(13),
+            end_at=self.local_datetime(14),
             price=self.other_service.price,
         )
         response = self.auth_client(self.admin).get("/api/admin/bookings/")
@@ -234,3 +246,96 @@ class BookingEngineTests(TestCase):
             Booking.objects.filter(workstation=self.ws1, status__in=[BookingStatus.PENDING]).count(),
             1,
         )
+
+    def test_availability_returns_free_workstation_counts_and_hides_full_slots(self) -> None:
+        response = self.auth_client(self.client_user).get(
+            f"/api/branches/{self.branch.id}/availability/?date={self.target_date.isoformat()}&service_id={self.service.id}"
+        )
+        ten = next(slot for slot in response.data["slots"] if slot["start_at"] == self.utc_iso(10))
+        self.assertEqual(ten["total_workstations"], 2)
+        self.assertEqual(ten["free_workstations"], 2)
+
+        self.assertEqual(self.create_booking().status_code, 201)
+        response = self.auth_client(self.client_user).get(
+            f"/api/branches/{self.branch.id}/availability/?date={self.target_date.isoformat()}&service_id={self.service.id}"
+        )
+        ten = next(slot for slot in response.data["slots"] if slot["start_at"] == self.utc_iso(10))
+        self.assertEqual(ten["occupied_workstations"], 1)
+        self.assertEqual(ten["free_workstations"], 1)
+
+        self.assertEqual(self.auth_client(self.other_client).post("/api/bookings/", self.payload(car_id=str(self.other_car.id)), format="json").status_code, 201)
+        response = self.auth_client(self.client_user).get(
+            f"/api/branches/{self.branch.id}/availability/?date={self.target_date.isoformat()}&service_id={self.service.id}"
+        )
+        starts = [slot["start_at"] for slot in response.data["slots"]]
+        self.assertNotIn(self.utc_iso(10), starts)
+
+    def test_cancelled_booking_frees_workstation_for_availability(self) -> None:
+        booking_id = self.create_booking().data["id"]
+        self.auth_client(self.client_user).post(f"/api/my-bookings/{booking_id}/cancel/")
+        response = self.auth_client(self.client_user).get(
+            f"/api/branches/{self.branch.id}/availability/?date={self.target_date.isoformat()}&service_id={self.service.id}"
+        )
+        ten = next(slot for slot in response.data["slots"] if slot["start_at"] == self.utc_iso(10))
+        self.assertEqual(ten["free_workstations"], 2)
+
+    def test_available_dates_are_limited_to_today_tomorrow_and_day_after_tomorrow(self) -> None:
+        response = self.auth_client(self.client_user).get(f"/api/branches/{self.branch.id}/available-dates/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["dates"]), 3)
+
+        too_far = timezone.now().astimezone(self.branch_tz).date() + timedelta(days=3)
+        response = self.auth_client(self.client_user).get(
+            f"/api/branches/{self.branch.id}/availability/?date={too_far.isoformat()}&service_id={self.service.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["slots"], [])
+        create_response = self.create_booking(start_at=datetime.combine(too_far, time(10), tzinfo=self.branch_tz).isoformat())
+        self.assertEqual(create_response.status_code, 400)
+
+    @patch("apps.bookings.management.commands.send_booking_reminders.send_telegram_message", return_value=True)
+    def test_send_reminders_skips_cancelled_bookings_and_marks_sent_once(self, _send_message) -> None:
+        from django.core.management import call_command
+
+        active = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        cancelled = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.other_client,
+            car=self.other_car,
+            service=self.service,
+            workstation=self.ws2,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.CANCELLED,
+        )
+        active_reminder = BookingReminder.objects.create(
+            booking=active,
+            kind=BookingReminderKind.HOUR_BEFORE,
+            scheduled_at=timezone.now() - timedelta(minutes=1),
+        )
+        BookingReminder.objects.create(
+            booking=cancelled,
+            kind=BookingReminderKind.HOUR_BEFORE,
+            scheduled_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        call_command("send_booking_reminders")
+        active_reminder.refresh_from_db()
+        self.assertIsNotNone(active_reminder.sent_at)
+        self.assertEqual(BookingReminder.objects.filter(sent_at__isnull=False).count(), 1)
+
+        call_command("send_booking_reminders")
+        self.assertEqual(BookingReminder.objects.filter(sent_at__isnull=False).count(), 1)

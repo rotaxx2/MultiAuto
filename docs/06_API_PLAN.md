@@ -38,8 +38,23 @@
 |---|---|---|
 | `GET` | `/api/me/` | Получить профиль текущего клиента. |
 | `GET` | `/api/my-profile/` | Получить профиль текущего клиента. |
-| `GET` | `/api/my-cars/` | Заготовка списка автомобилей текущего клиента. Пока возвращает пустой список до реализации cars domain. |
-| `GET` | `/api/my-bookings/` | Заготовка списка записей текущего клиента. Пока возвращает пустой список до реализации bookings domain. |
+| `GET` | `/api/my-cars/` | Список автомобилей текущего клиента. |
+| `GET` | `/api/my-bookings/` | Список записей текущего клиента. |
+
+### Реализованные booking endpoints Stage 6
+
+| Method | Endpoint | Role | Описание |
+|---|---|---|---|
+| `GET` | `/api/branches/{branch_id}/availability/?date=YYYY-MM-DD&service_id={id}` | CLIENT | Возвращает доступные слоты филиала для активной услуги. Не раскрывает workstation и чужие booking data. |
+| `POST` | `/api/bookings/` | CLIENT | Создает запись. Клиент передает `branch_id`, `car_id`, `service_id`, `start_at`, `client_comment`. Backend сам определяет `organization`, `client`, `workstation`, `end_at`, `status`, `price`. |
+| `GET` | `/api/my-bookings/` | CLIENT | Список записей текущего клиента. |
+| `GET` | `/api/my-bookings/{id}/` | CLIENT | Детали только своей записи. Чужие записи не раскрываются. |
+| `POST` | `/api/my-bookings/{id}/cancel/` | CLIENT | Отмена своей записи в статусе `PENDING`. |
+| `GET` | `/api/admin/bookings/` | ADMIN, OWNER | Список записей своей организации. |
+| `GET` | `/api/admin/bookings/{id}/` | ADMIN, OWNER | Детали записи своей организации. |
+| `PATCH` | `/api/admin/bookings/{id}/` | ADMIN, OWNER | Изменение `status` и `admin_comment` с проверкой допустимых переходов. |
+
+`POST /api/bookings/` не принимает `organization_id`, `client_id`, `workstation_id`, `end_at`, `status`, `price`. Эти поля определяются backend.
 
 Эти endpoint'ы не принимают `user_id` из URL или query params для выбора владельца данных.
 
@@ -55,6 +70,16 @@ Frontend Mini App использует:
 ```text
 Authorization: Token <token>
 ```
+
+`GET /api/my-cars/` теперь реализован как полноценный CRUD:
+
+| Method | Endpoint | Назначение |
+|---|---|---|
+| `GET` | `/api/my-cars/` | Список автомобилей текущего клиента. |
+| `POST` | `/api/my-cars/` | Добавить автомобиль текущему клиенту. |
+| `GET` | `/api/my-cars/{id}/` | Получить свой автомобиль. |
+| `PATCH` | `/api/my-cars/{id}/` | Обновить свой автомобиль. |
+| `DELETE` | `/api/my-cars/{id}/` | Удалить свой автомобиль. |
 
 ### Автомобили клиента
 
@@ -73,6 +98,15 @@ Authorization: Token <token>
 | `GET` | `/api/v1/client/branches` | Список активных филиалов организации. |
 | `GET` | `/api/v1/client/services` | Список активных услуг. |
 | `GET` | `/api/v1/client/vehicle-types` | Список типов автомобилей. |
+
+Дополнительно реализованы:
+
+| Method | Endpoint | Назначение |
+|---|---|---|
+| `GET` | `/api/services/` | Активные услуги организации клиента. |
+| `GET` | `/api/branches/` | Активные филиалы организации клиента. |
+| `GET` | `/api/branches/{id}/services/` | Активные услуги организации для выбранного филиала. |
+| `GET` | `/api/branches/{id}/schedule/?date=YYYY-MM-DD` | Рабочее время филиала на дату с учетом исключений. |
 
 ### Записи
 
@@ -161,6 +195,19 @@ Authorization: Token <token>
 | `PUT` | `/api/v1/admin/schedule/working-hours` | ADMIN, OWNER | Обновить рабочие часы. |
 | `PUT` | `/api/v1/admin/schedule/breaks` | ADMIN, OWNER | Обновить перерывы. |
 | `PUT` | `/api/v1/admin/schedule/exceptions` | ADMIN, OWNER | Обновить исключения. |
+
+Текущие реализованные admin endpoints:
+
+| Method | Endpoint | Роли | Назначение |
+|---|---|---|---|
+| `GET/POST` | `/api/admin/services/` | ADMIN, OWNER | Список и создание услуг своей организации. |
+| `GET/PATCH/DELETE` | `/api/admin/services/{id}/` | ADMIN, OWNER | Управление услугой своей организации. |
+| `GET/POST` | `/api/admin/workstations/` | ADMIN, OWNER | Список и создание боксов филиалов своей организации. |
+| `GET/PATCH/DELETE` | `/api/admin/workstations/{id}/` | ADMIN, OWNER | Управление боксом своей организации. |
+| `GET/POST` | `/api/admin/business-hours/` | ADMIN, OWNER | Рабочие часы филиалов своей организации. |
+| `GET/PATCH/DELETE` | `/api/admin/business-hours/{id}/` | ADMIN, OWNER | Управление рабочими часами. |
+| `GET/POST` | `/api/admin/schedule-exceptions/` | ADMIN, OWNER | Исключения расписания филиалов своей организации. |
+| `GET/PATCH/DELETE` | `/api/admin/schedule-exceptions/{id}/` | ADMIN, OWNER | Управление исключением расписания. |
 
 ### Reviews
 

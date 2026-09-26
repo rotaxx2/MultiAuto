@@ -50,15 +50,26 @@
 
 ## Этап 4: booking engine
 
-Задачи:
+Статус Stage 6: базовое ядро бронирования реализовано.
 
-- реализовать расписание филиала;
-- реализовать перерывы и исключения;
-- реализовать расчет слотов;
-- реализовать создание записи;
-- реализовать перенос и отмену;
-- реализовать защиту от double booking;
-- покрыть race-condition tests.
+Готово:
+
+- расписание филиала через `BusinessHour` и `ScheduleException`;
+- расчет доступных слотов с шагом 30 минут;
+- создание записи клиентом;
+- отмена клиентом `PENDING` записи;
+- admin/owner просмотр и смена статусов записей своей организации;
+- автоматическое назначение свободного `Workstation`;
+- transaction + row locking защита от double booking;
+- backend tests для availability, overlap, status transitions и tenant isolation.
+
+Осталось отдельными этапами:
+
+- полноценный reschedule flow;
+- отдельные break windows;
+- PostgreSQL `ExclusionConstraint` как дополнительная production-hardening защита;
+- status history/audit log;
+- уведомления после изменений статусов.
 
 ## Этап 5: admin MVP
 

@@ -60,3 +60,29 @@ class Booking(models.Model):
 
     def __str__(self) -> str:
         return f"{self.service.name} at {self.start_at.isoformat()}"
+
+
+class BookingReminderKind(models.TextChoices):
+    DAY_BEFORE = "DAY_BEFORE", "Day before"
+    HOUR_BEFORE = "HOUR_BEFORE", "Hour before"
+
+
+class BookingReminder(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=20, choices=BookingReminderKind.choices)
+    scheduled_at = models.DateTimeField()
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["scheduled_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["booking", "kind"], name="booking_reminder_kind_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["scheduled_at", "sent_at"], name="book_reminder_due_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.booking_id} {self.kind}"

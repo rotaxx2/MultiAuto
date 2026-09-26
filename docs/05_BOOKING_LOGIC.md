@@ -4,12 +4,24 @@
 
 Booking Engine должен показывать клиенту только реально доступные слоты и не допускать double booking при параллельных запросах.
 
+На Stage 6 реализован базовый Booking Engine. Он использует:
+
+- `Car` клиента;
+- активные `Service` организации;
+- `Branch`;
+- `Workstation` филиала;
+- `BusinessHour`;
+- `ScheduleException`;
+- utility `get_branch_schedule(branch, date)`;
+- `Booking`;
+- service layer `apps.bookings.services`.
+
 ## Входные параметры расчета слотов
 
 - `organization_id` из server auth context.
 - `branch_id`.
 - `service_id`.
-- `car_id` или `vehicle_type_id`.
+- `car_id` нужен при создании записи, но не нужен для расчета текущих слотов.
 - `date`.
 - timezone филиала.
 
@@ -23,7 +35,6 @@ Booking Engine загружает:
 - активные боксы филиала;
 - базовое расписание филиала на день недели;
 - исключение расписания на конкретную дату;
-- перерывы на день недели и конкретную дату;
 - существующие записи филиала на выбранную дату в активных статусах.
 
 Активные статусы, блокирующие слот:
@@ -42,20 +53,16 @@ PENDING, CONFIRMED, ARRIVED, IN_PROGRESS, READY
 4. Если исключение найдено и филиал открыт, использовать `opens_at` и `closes_at` из исключения.
 5. Если исключения нет, использовать `branch_working_hours` по `weekday`.
 6. Если рабочий день закрыт, вернуть пустой список.
-7. Преобразовать локальные `opens_at` и `closes_at` в UTC-интервал.
+7. Преобразовать локальные `opening_time` и `closing_time` филиала в timezone-aware datetime.
+8. `Booking.start_at` и `Booking.end_at` хранить как timezone-aware значения.
 
 ## Учет перерывов
 
-Из рабочего окна вычитаются:
-
-- регулярные перерывы по `weekday`;
-- специальные перерывы по `date`.
-
-Слот считается доступным только если весь интервал услуги не пересекает перерыв.
+Перерывы как отдельная сущность пока не реализованы. Для MVP рабочее окно определяется через `BusinessHour` и `ScheduleException`. Когда появятся отдельные break windows, они должны вычитаться из рабочего окна тем же service layer, а не во frontend.
 
 ## Генерация слотов
 
-Рекомендуемый шаг сетки: 15 минут. Шаг должен быть настройкой системы или филиала.
+На MVP используется фиксированный шаг сетки 30 минут.
 
 Алгоритм:
 
@@ -76,7 +83,7 @@ existing.starts_at < requested.ends_at
 AND existing.ends_at > requested.starts_at
 ```
 
-Если `workstation_id` еще не выбран клиентом, Booking Engine должен найти любой свободный активный бокс филиала.
+Клиент не выбирает `workstation_id`. Booking Engine на backend выбирает первый свободный активный бокс филиала внутри транзакции.
 
 ## Создание записи
 
@@ -88,13 +95,12 @@ AND existing.ends_at > requested.starts_at
 4. Проверить, что филиал принадлежит организации и активен.
 5. Проверить, что услуга принадлежит организации и активна.
 6. Рассчитать `ends_at`.
-7. Повторно проверить расписание, перерывы и доступность боксов.
+7. Повторно проверить расписание и доступность боксов.
 8. Выбрать свободный `workstation_id`.
-9. Заблокировать выбранный ресурс на время транзакции.
-10. Создать `booking` со статусом `PENDING` или `CONFIRMED` в зависимости от бизнес-настройки организации.
-11. Создать запись в `booking_status_history`.
-12. Создать notification records для подтверждения и будущего напоминания.
-13. Зафиксировать транзакцию.
+9. Заблокировать активные боксы филиала через `select_for_update()` на время транзакции.
+10. Создать `booking` со статусом `PENDING`.
+11. Сохранить snapshot цены в `Booking.price`.
+12. Зафиксировать транзакцию.
 
 ## Защита от double booking
 
@@ -102,7 +108,7 @@ AND existing.ends_at > requested.starts_at
 
 - транзакция;
 - повторная проверка доступности внутри транзакции;
-- блокировка выбранного бокса или конфликтующих строк;
+- блокировка активных `Workstation` филиала через `select_for_update()`;
 - индекс по `workstation_id, starts_at, ends_at`.
 
 Рекомендуемый уровень для PostgreSQL:
@@ -112,6 +118,8 @@ AND existing.ends_at > requested.starts_at
 - при конфликте возвращать клиенту ошибку `SLOT_UNAVAILABLE`.
 
 Если две записи одновременно пытаются занять один слот, успешной должна быть только одна транзакция.
+
+На Stage 6 используется transaction + row locking active workstations. PostgreSQL serializes concurrent allocation attempts for the same branch workstations. `ExclusionConstraint` пока не добавлен, потому что тестовая конфигурация проекта использует SQLite, а текущий вариант уже совместим с PostgreSQL и покрыт тестами. Перед production-нагрузкой можно добавить PostgreSQL-specific exclusion constraint как дополнительную database-level защиту.
 
 ## Перенос записи
 
@@ -144,25 +152,20 @@ AND existing.ends_at > requested.starts_at
 
 ## Отмена записи
 
-`CLIENT` может отменить только свою запись в статусах:
+`CLIENT` может отменить только свою запись в статусе:
 
 - `PENDING`
-- `CONFIRMED`
 
 `ADMIN` и `OWNER` могут отменить запись организации в статусах:
 
 - `PENDING`
 - `CONFIRMED`
-- `ARRIVED`
 
 При отмене:
 
 - статус меняется на `CANCELLED`;
-- заполняется `cancelled_at`;
-- сохраняется причина отмены;
-- создается запись в `booking_status_history`;
-- будущие pending notifications по записи отменяются;
-- создается notification об отмене.
+- запись перестает блокировать слот;
+- уведомления и status history будут добавлены отдельным этапом.
 
 ## Переходы статусов
 
@@ -172,11 +175,11 @@ AND existing.ends_at > requested.starts_at
 |---|---|---|
 | `PENDING` | `CONFIRMED` | ADMIN, OWNER, SYSTEM |
 | `PENDING` | `CANCELLED` | CLIENT, ADMIN, OWNER |
+| `PENDING` | `NO_SHOW` | ADMIN, OWNER |
 | `CONFIRMED` | `ARRIVED` | ADMIN, OWNER |
-| `CONFIRMED` | `CANCELLED` | CLIENT, ADMIN, OWNER |
+| `CONFIRMED` | `CANCELLED` | ADMIN, OWNER |
 | `CONFIRMED` | `NO_SHOW` | ADMIN, OWNER |
 | `ARRIVED` | `IN_PROGRESS` | ADMIN, OWNER |
-| `ARRIVED` | `CANCELLED` | ADMIN, OWNER |
 | `IN_PROGRESS` | `READY` | ADMIN, OWNER |
 | `READY` | `COMPLETED` | ADMIN, OWNER |
 
@@ -190,7 +193,7 @@ AND existing.ends_at > requested.starts_at
 
 ## История статусов
 
-Каждое изменение статуса должно создавать запись:
+`booking_status_history` остается запланированной сущностью. На Stage 6 переходы статусов валидируются в service layer, но отдельная audit history не реализована.
 
 - прежний статус;
 - новый статус;

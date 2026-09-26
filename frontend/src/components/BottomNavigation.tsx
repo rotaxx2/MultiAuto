@@ -1,4 +1,4 @@
-import { CalendarDays, Car, Home, UserRound } from 'lucide-react';
+import { CalendarDays, Car, Home, MapPin, PlusCircle, Sparkles, UserRound } from 'lucide-react';
 
 import type { PageId } from '../types/navigation';
 
@@ -10,13 +10,16 @@ interface BottomNavigationProps {
 const items = [
   { id: 'home', label: 'Главная', icon: Home },
   { id: 'cars', label: 'Авто', icon: Car },
-  { id: 'bookings', label: 'Записи', icon: CalendarDays },
+  { id: 'services', label: 'Услуги', icon: Sparkles },
+  { id: 'branches', label: 'Филиалы', icon: MapPin },
+  { id: 'booking-create', label: 'Запись', icon: PlusCircle },
+  { id: 'bookings', label: 'Мои', icon: CalendarDays },
   { id: 'profile', label: 'Профиль', icon: UserRound },
 ] satisfies Array<{ id: PageId; label: string; icon: typeof Home }>;
 
 export function BottomNavigation({ activePage, onChange }: BottomNavigationProps) {
   return (
-    <nav className="bottom-nav" aria-label="Основная навигация">
+    <nav className="bottom-nav six-items" aria-label="Основная навигация">
       {items.map((item) => {
         const Icon = item.icon;
         return (

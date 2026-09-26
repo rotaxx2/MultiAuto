@@ -116,26 +116,24 @@
 | Поле | Тип | Ограничения |
 |---|---|---|
 | `id` | UUID | PK |
-| `organization_id` | UUID | FK -> organizations.id, not null |
-| `customer_id` | UUID | FK -> customers.id, not null |
-| `vehicle_type_id` | UUID | FK -> vehicle_types.id, not null |
+| `owner_id` | UUID | FK -> accounts_user.id, not null |
 | `brand` | varchar(100) | not null |
 | `model` | varchar(100) | not null |
 | `license_plate` | varchar(32) | not null |
 | `color` | varchar(50) | not null |
-| `is_active` | boolean | not null, default true |
+| `year` | smallint | nullable |
 | `created_at` | timestamp | not null |
 | `updated_at` | timestamp | not null |
-| `deleted_at` | timestamp | nullable |
 
 Ограничения:
 
-- unique `(organization_id, customer_id, license_plate)` where `deleted_at is null`.
+- unique `(owner_id, license_plate)`.
+- `license_plate` хранится в нормализованном виде: uppercase, без пробелов.
 
 Индексы:
 
-- `cars_org_customer_idx(organization_id, customer_id)`.
-- `cars_org_plate_idx(organization_id, license_plate)`.
+- `cars_owner_idx(owner_id)`.
+- `cars_owner_plate_idx(owner_id, license_plate)`.
 
 ## services
 
@@ -146,7 +144,7 @@
 | `name` | varchar(255) | not null |
 | `description` | text | nullable |
 | `duration_minutes` | integer | not null |
-| `base_price_amount` | integer | not null |
+| `price` | decimal(10,2) | not null |
 | `is_active` | boolean | not null, default true |
 | `created_at` | timestamp | not null |
 | `updated_at` | timestamp | not null |
@@ -155,8 +153,8 @@
 Ограничения:
 
 - check `duration_minutes > 0`.
-- check `base_price_amount >= 0`.
-- unique `(organization_id, name)` where `deleted_at is null`.
+- check `price >= 0`.
+- unique `(organization_id, name)`.
 
 Индексы:
 
@@ -197,27 +195,30 @@
 
 - unique `(organization_id, branch_id, name)`.
 
+В реализации `organization_id` получается через `branch.organization_id`; API всегда фильтрует по организации пользователя.
+
 Индексы:
 
 - `workstations_branch_active_idx(organization_id, branch_id, is_active)`.
 
-## branch_working_hours
+## business_hours
 
 | Поле | Тип | Ограничения |
 |---|---|---|
 | `id` | UUID | PK |
-| `organization_id` | UUID | FK -> organizations.id, not null |
 | `branch_id` | UUID | FK -> branches.id, not null |
-| `weekday` | integer | not null, 1-7 |
-| `opens_at` | time | nullable |
-| `closes_at` | time | nullable |
+| `weekday` | integer | not null, 0-6 |
+| `opening_time` | time | nullable |
+| `closing_time` | time | nullable |
 | `is_closed` | boolean | not null, default false |
+| `created_at` | timestamp | not null |
+| `updated_at` | timestamp | not null |
 
 Ограничения:
 
-- unique `(organization_id, branch_id, weekday)`.
-- check `weekday between 1 and 7`.
-- if `is_closed = false`, `opens_at` and `closes_at` are not null and `opens_at < closes_at`.
+- unique `(branch_id, weekday)`.
+- weekday: `0 = Monday`, `6 = Sunday`.
+- if `is_closed = false`, `opening_time` and `closing_time` are not null and `opening_time < closing_time`.
 
 ## branch_breaks
 
@@ -245,14 +246,19 @@
 | `organization_id` | UUID | FK -> organizations.id, not null |
 | `branch_id` | UUID | FK -> branches.id, not null |
 | `date` | date | not null |
-| `opens_at` | time | nullable |
-| `closes_at` | time | nullable |
+| `opening_time` | time | nullable |
+| `closing_time` | time | nullable |
 | `is_closed` | boolean | not null, default false |
 | `reason` | varchar(255) | nullable |
+| `created_at` | timestamp | not null |
+| `updated_at` | timestamp | not null |
 
 Ограничения:
 
-- unique `(organization_id, branch_id, date)`.
+- unique `(branch_id, date)`.
+- if `is_closed = false`, `opening_time` and `closing_time` are not null and `opening_time < closing_time`.
+
+`ScheduleException` имеет приоритет над `BusinessHour`.
 
 ## bookings
 
@@ -261,18 +267,16 @@
 | `id` | UUID | PK |
 | `organization_id` | UUID | FK -> organizations.id, not null |
 | `branch_id` | UUID | FK -> branches.id, not null |
-| `customer_id` | UUID | FK -> customers.id, not null |
+| `client_id` | UUID | FK -> accounts_customuser.id, not null |
 | `car_id` | UUID | FK -> cars.id, not null |
 | `service_id` | UUID | FK -> services.id, not null |
-| `workstation_id` | UUID | FK -> workstations.id, nullable |
+| `workstation_id` | UUID | FK -> workstations.id, not null |
 | `status` | enum | not null |
-| `starts_at` | timestamp | not null |
-| `ends_at` | timestamp | not null |
-| `price_amount` | integer | not null |
+| `start_at` | timestamptz | not null |
+| `end_at` | timestamptz | not null |
+| `price` | decimal(10,2) | not null |
 | `client_comment` | text | nullable |
 | `admin_comment` | text | nullable |
-| `cancelled_at` | timestamp | nullable |
-| `cancellation_reason` | text | nullable |
 | `created_at` | timestamp | not null |
 | `updated_at` | timestamp | not null |
 
@@ -289,21 +293,23 @@
 
 Ограничения:
 
-- check `starts_at < ends_at`.
-- check `price_amount >= 0`.
-- `car_id`, `customer_id`, `service_id`, `branch_id`, `workstation_id` должны принадлежать тому же `organization_id`.
+- business validation `start_at < end_at`.
+- business validation `price >= 0`.
+- `car_id`, `client_id`, `service_id`, `branch_id`, `workstation_id` должны принадлежать тому же `organization_id`.
+- `price` хранит snapshot цены услуги на момент создания записи.
 
 Индексы:
 
-- `bookings_org_branch_time_idx(organization_id, branch_id, starts_at, ends_at)`.
-- `bookings_org_customer_idx(organization_id, customer_id, starts_at desc)`.
-- `bookings_org_status_idx(organization_id, status)`.
-- `bookings_workstation_time_idx(workstation_id, starts_at, ends_at)`.
+- `book_org_branch_start_idx(organization_id, branch_id, start_at)`.
+- `book_client_start_idx(client_id, start_at)`.
+- `book_org_status_idx(organization_id, status)`.
+- `book_ws_time_idx(workstation_id, start_at, end_at)`.
 
 Защита от double booking:
 
-- на уровне транзакции проверять пересечения по `workstation_id`;
-- если используется PostgreSQL, добавить exclusion constraint по `workstation_id` и временному диапазону для активных статусов.
+- на уровне транзакции блокировать активные боксы филиала через `select_for_update()`;
+- повторно проверять пересечения по `workstation_id`;
+- перед production-нагрузкой можно усилить защиту PostgreSQL-specific `ExclusionConstraint` для активных статусов.
 
 Активные статусы для блокировки слота:
 

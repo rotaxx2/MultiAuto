@@ -23,7 +23,14 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 def env_list(name: str, default: str = "") -> list[str]:
     value = os.getenv(name, default)
-    return [item.strip() for item in value.split(",") if item.strip()]
+    items: list[str] = []
+    for item in value.split(","):
+        cleaned = item.strip()
+        if " #" in cleaned:
+            cleaned = cleaned.split(" #", 1)[0].strip()
+        if cleaned:
+            items.append(cleaned)
+    return items
 
 
 SECRET_KEY = os.getenv("SECRET_KEY", "unsafe-development-secret-key")
@@ -148,6 +155,7 @@ CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
-TELEGRAM_MINI_APP_URL = os.getenv("TELEGRAM_MINI_APP_URL", "")
+TELEGRAM_MINI_APP_URL = os.getenv("TELEGRAM_MINI_APP_URL", "").strip()
 TELEGRAM_AUTH_MAX_AGE_SECONDS = int(os.getenv("TELEGRAM_AUTH_MAX_AGE_SECONDS", "86400"))
 TELEGRAM_DEFAULT_ORGANIZATION_SLUG = os.getenv("TELEGRAM_DEFAULT_ORGANIZATION_SLUG", "")
+BOOKING_REMINDER_POLL_SECONDS = int(os.getenv("BOOKING_REMINDER_POLL_SECONDS", "300"))

@@ -7,7 +7,7 @@ import { ApiError, getStoredToken } from '../api/client';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthorized' | 'error';
 
-export function useAuth(initData: string, startParam: string, isTelegram: boolean) {
+export function useAuth(initData: string, startParam: string, isTelegram: boolean, telegramReady: boolean) {
   const [user, setUser] = useState<User | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [error, setError] = useState<string>('');
@@ -17,6 +17,10 @@ export function useAuth(initData: string, startParam: string, isTelegram: boolea
     setError('');
 
     try {
+      if (!telegramReady) {
+        return;
+      }
+
       const token = getStoredToken();
       if (token) {
         setUser(await getMyProfile());
@@ -41,7 +45,7 @@ export function useAuth(initData: string, startParam: string, isTelegram: boolea
       setStatus('error');
       setError(caught instanceof Error ? caught.message : 'Не удалось загрузить данные.');
     }
-  }, [initData, isTelegram, startParam]);
+  }, [initData, isTelegram, startParam, telegramReady]);
 
   useEffect(() => {
     void authenticate();

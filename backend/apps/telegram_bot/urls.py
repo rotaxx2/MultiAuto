@@ -2,7 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from apps.branches.views import ClientBranchServiceViewSet, ClientBranchViewSet
-from apps.bookings.views import AdminBookingViewSet, BookingCreateView, BranchAvailabilityView, MyBookingViewSet
+from apps.bookings.views import AdminBookingViewSet, BookingCreateView, BranchAvailabilityView, BranchAvailableDatesView, MyBookingViewSet
 from apps.cars.views import MyCarViewSet
 from apps.schedules.views import AdminBusinessHourViewSet, AdminScheduleExceptionViewSet, ClientBranchScheduleView
 from apps.services.views import AdminServiceViewSet, ClientServiceViewSet
@@ -28,6 +28,7 @@ urlpatterns = [
     path("me/", MeView.as_view(), name="client-me"),
     path("my-profile/", MyProfileView.as_view(), name="client-my-profile"),
     path("bookings/", BookingCreateView.as_view(), name="client-booking-create"),
+    path("branches/<uuid:branch_id>/available-dates/", BranchAvailableDatesView.as_view(), name="client-branch-available-dates"),
     path("branches/<uuid:branch_id>/availability/", BranchAvailabilityView.as_view(), name="client-branch-availability"),
     path("branches/<uuid:branch_pk>/services/", branch_services, name="client-branch-services"),
     path("branches/<uuid:pk>/schedule/", ClientBranchScheduleView.as_view(), name="client-branch-schedule"),

@@ -25,14 +25,71 @@ export interface Car {
   model: string;
   license_plate: string;
   color: string;
-  vehicle_type: string;
+  year: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Booking {
   id: string;
+  branch: string;
+  branch_name: string;
+  car: string;
+  car_label: string;
+  service: string;
+  service_name: string;
   status: string;
-  starts_at: string;
-  ends_at: string;
+  start_at: string;
+  end_at: string;
+  price: string;
+  client_comment: string;
+  admin_comment: string;
+}
+
+export interface AvailabilitySlot {
+  start_at: string;
+  end_at: string;
+  total_workstations: number;
+  occupied_workstations: number;
+  free_workstations: number;
+  is_available: boolean;
+}
+
+export interface AvailabilityResponse {
+  date: string;
+  timezone: string;
+  service_id: string;
+  duration_minutes: number;
+  slots: AvailabilitySlot[];
+}
+
+export interface AvailableDate {
+  date: string;
+  label: string;
+  is_available: boolean;
+}
+
+export interface AvailableDatesResponse {
+  timezone: string;
+  dates: AvailableDate[];
+}
+
+export interface Service {
+  id: string;
+  name: string;
+  description: string;
+  duration_minutes: number;
+  price: string;
+  is_active: boolean;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  timezone: string;
+  is_active: boolean;
 }
 
 export interface ListResponse<T> {

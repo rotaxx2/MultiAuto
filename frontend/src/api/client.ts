@@ -1,6 +1,6 @@
 import type { ApiErrorPayload } from '../types/api';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 const TOKEN_KEY = 'multiauto_client_token';
 
 export class ApiError extends Error {
@@ -65,6 +65,10 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       clearStoredToken();
     }
     throw await parseError(response);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return (await response.json()) as T;
