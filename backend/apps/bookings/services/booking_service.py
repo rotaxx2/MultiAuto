@@ -195,3 +195,60 @@ def update_admin_booking_status(*, booking: Booking, status: str | None, admin_c
         fields.append("updated_at")
         locked.save(update_fields=fields)
     return locked
+
+
+@transaction.atomic
+def update_admin_booking(
+    *,
+    booking: Booking,
+    status: str | None = None,
+    admin_comment: str | None = None,
+    start_at: datetime | None = None,
+    workstation: Workstation | None = None,
+) -> Booking:
+    locked = (
+        Booking.objects.select_for_update()
+        .select_related("branch", "service", "workstation")
+        .get(id=booking.id)
+    )
+
+    if status is not None and status != locked.status:
+        target = BookingStatus(status)
+        allowed_targets = ADMIN_STATUS_TRANSITIONS.get(locked.status, set())
+        if target not in allowed_targets:
+            raise ValidationError("Invalid booking status transition.")
+        locked.status = target
+
+    if admin_comment is not None:
+        locked.admin_comment = admin_comment
+
+    target_start = normalize_start_at(start_at) if start_at is not None else locked.start_at
+    target_workstation = workstation or locked.workstation
+    if target_workstation.branch_id != locked.branch_id:
+        raise ValidationError("Workstation must belong to booking branch.")
+    if not target_workstation.is_active:
+        raise ValidationError("Workstation is inactive.")
+
+    changing_slot = target_start != locked.start_at or target_workstation.id != locked.workstation_id
+    if changing_slot:
+        target_end = target_start + timedelta(minutes=locked.service.duration_minutes)
+        if target_end <= target_start:
+            raise ValidationError("Booking end time must be later than start time.")
+        validate_inside_working_hours(locked.branch, target_start, target_end)
+
+        Workstation.objects.select_for_update().get(id=target_workstation.id)
+        conflict_exists = Booking.objects.filter(
+            workstation=target_workstation,
+            status__in=BLOCKING_BOOKING_STATUSES,
+            start_at__lt=target_end,
+            end_at__gt=target_start,
+        ).exclude(id=locked.id).exists()
+        if conflict_exists:
+            raise ValidationError("Workstation is not available for selected time.")
+
+        locked.start_at = target_start
+        locked.end_at = target_end
+        locked.workstation = target_workstation
+
+    locked.save(update_fields=["status", "admin_comment", "start_at", "end_at", "workstation", "updated_at"])
+    return locked

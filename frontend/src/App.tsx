@@ -8,6 +8,8 @@ import { BranchesPage } from './pages/BranchesPage';
 import { BookingsPage } from './pages/BookingsPage';
 import { CarsPage } from './pages/CarsPage';
 import { CreateBookingPage } from './pages/CreateBookingPage';
+import { AdminPanel } from './pages/AdminPanel';
+import type { AdminPage } from './pages/AdminPanel';
 import { HomePage } from './pages/HomePage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ServicesPage } from './pages/ServicesPage';
@@ -17,6 +19,8 @@ export default function App() {
   const telegram = useTelegram();
   const auth = useAuth(telegram.initData, telegram.startParam, telegram.isTelegram, telegram.ready);
   const [page, setPage] = useState<PageId>('home');
+  const isAdminRoute = window.location.pathname.startsWith('/admin');
+  const adminPage = getAdminPage(window.location.pathname);
 
   if (auth.status === 'loading') {
     return <StateView title="Загрузка..." description="Подключаем Mini App к MultiAuto." />;
@@ -44,6 +48,13 @@ export default function App() {
     );
   }
 
+  if (isAdminRoute) {
+    if (auth.user.role === 'CLIENT') {
+      return <StateView title="Доступ закрыт" description="Административная панель доступна только ADMIN и OWNER." />;
+    }
+    return <AdminPanel initialPage={adminPage} />;
+  }
+
   return (
     <AppLayout activePage={page} onNavigate={setPage}>
       {page === 'home' ? <HomePage user={auth.user} onNavigate={setPage} /> : null}
@@ -55,4 +66,12 @@ export default function App() {
       {page === 'profile' ? <ProfilePage user={auth.user} /> : null}
     </AppLayout>
   );
+}
+
+function getAdminPage(pathname: string): AdminPage {
+  const segment = pathname.split('/').filter(Boolean)[1];
+  if (segment === 'bookings' || segment === 'clients' || segment === 'services' || segment === 'branches' || segment === 'boxes' || segment === 'schedule') {
+    return segment;
+  }
+  return 'dashboard';
 }

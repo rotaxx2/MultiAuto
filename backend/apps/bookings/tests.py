@@ -38,6 +38,7 @@ class BookingEngineTests(TestCase):
         self.client_user = User.objects.create_user(username="client", telegram_id=4001, role=UserRole.CLIENT, organization=self.org)
         self.other_client = User.objects.create_user(username="other-client", telegram_id=4002, role=UserRole.CLIENT, organization=self.org)
         self.admin = User.objects.create_user(username="admin", telegram_id=4003, role=UserRole.ADMIN, organization=self.org)
+        self.owner = User.objects.create_user(username="owner", telegram_id=4005, role=UserRole.OWNER, organization=self.org)
         self.other_admin = User.objects.create_user(username="other-admin", telegram_id=4004, role=UserRole.ADMIN, organization=self.other_org)
         self.car = Car.objects.create(owner=self.client_user, brand="Toyota", model="Camry", license_plate="A123BC", color="White")
         self.other_car = Car.objects.create(owner=self.other_client, brand="BMW", model="X5", license_plate="B777BB", color="Black")
@@ -236,6 +237,115 @@ class BookingEngineTests(TestCase):
 
         invalid = self.auth_client(self.admin).patch(f"/api/admin/bookings/{booking_id}/", {"status": "COMPLETED"}, format="json")
         self.assertEqual(invalid.status_code, 400)
+
+    def test_client_cannot_access_admin_api(self) -> None:
+        client = self.auth_client(self.client_user)
+        self.assertEqual(client.get("/api/admin/dashboard/").status_code, 403)
+        self.assertEqual(client.get("/api/admin/clients/").status_code, 403)
+        self.assertEqual(client.get("/api/admin/bookings/").status_code, 403)
+        self.assertEqual(client.post("/api/admin/services/", {"name": "X", "duration_minutes": 30, "price": "1.00"}, format="json").status_code, 403)
+        self.assertEqual(client.post("/api/admin/branches/", {"name": "X", "address": "Y", "timezone": "UTC"}, format="json").status_code, 403)
+        self.assertEqual(client.post("/api/admin/workstations/", {"branch": str(self.branch.id), "name": "Box 3"}, format="json").status_code, 403)
+        self.assertEqual(client.get("/api/admin/business-hours/").status_code, 403)
+
+    def test_admin_and_owner_can_access_admin_api(self) -> None:
+        self.create_booking()
+        self.assertEqual(self.auth_client(self.admin).get("/api/admin/dashboard/").status_code, 200)
+        self.assertEqual(self.auth_client(self.admin).get("/api/admin/bookings/").status_code, 200)
+        self.assertEqual(self.auth_client(self.admin).get("/api/admin/clients/").status_code, 200)
+        self.assertEqual(self.auth_client(self.owner).get("/api/admin/dashboard/").status_code, 200)
+        self.assertEqual(self.auth_client(self.owner).get("/api/admin/services/").status_code, 200)
+
+    def test_admin_clients_are_tenant_scoped(self) -> None:
+        other_org_client = User.objects.create_user(username="other-org-client", telegram_id=4010, role=UserRole.CLIENT, organization=self.other_org)
+        Car.objects.create(owner=other_org_client, brand="Lada", model="Vesta", license_plate="T001TT", color="Blue")
+        response = self.auth_client(self.admin).get("/api/admin/clients/")
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["results"]}
+        self.assertIn(str(self.client_user.id), ids)
+        self.assertNotIn(str(other_org_client.id), ids)
+
+    def test_admin_can_manage_branches_services_boxes_inside_tenant(self) -> None:
+        api = self.auth_client(self.admin)
+        branch_response = api.post(
+            "/api/admin/branches/",
+            {"name": "North", "address": "North street", "phone": "+7", "timezone": "Asia/Novosibirsk", "is_active": True},
+            format="json",
+        )
+        self.assertEqual(branch_response.status_code, 201)
+        service_response = api.post(
+            "/api/admin/services/",
+            {"name": "Express", "description": "", "duration_minutes": 30, "price": "700.00", "is_active": True},
+            format="json",
+        )
+        self.assertEqual(service_response.status_code, 201)
+        box_response = api.post(
+            "/api/admin/workstations/",
+            {"branch": branch_response.data["id"], "name": "Box A", "is_active": True},
+            format="json",
+        )
+        self.assertEqual(box_response.status_code, 201)
+        disabled = api.patch(f"/api/admin/branches/{branch_response.data['id']}/", {"is_active": False}, format="json")
+        self.assertEqual(disabled.status_code, 200)
+
+    def test_admin_cannot_create_box_for_other_tenant_branch(self) -> None:
+        response = self.auth_client(self.admin).post(
+            "/api/admin/workstations/",
+            {"branch": str(self.other_branch.id), "name": "Alien Box"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_inactive_workstation_is_not_used_for_new_bookings(self) -> None:
+        self.ws2.is_active = False
+        self.ws2.save(update_fields=["is_active"])
+        self.assertEqual(self.create_booking().status_code, 201)
+        second = self.create_booking()
+        self.assertEqual(second.status_code, 400)
+
+    def test_inactive_service_is_hidden_from_clients(self) -> None:
+        response = self.auth_client(self.client_user).get("/api/services/")
+        ids = {item["id"] for item in response.data["results"]}
+        self.assertIn(str(self.service.id), ids)
+        self.assertNotIn(str(self.inactive_service.id), ids)
+
+    def test_schedule_change_affects_availability(self) -> None:
+        api = self.auth_client(self.admin)
+        business_hour = BusinessHour.objects.get(branch=self.branch, weekday=self.target_date.weekday())
+        response = api.patch(
+            f"/api/admin/business-hours/{business_hour.id}/",
+            {"is_closed": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        availability = self.auth_client(self.client_user).get(
+            f"/api/branches/{self.branch.id}/availability/?date={self.target_date.isoformat()}&service_id={self.service.id}"
+        )
+        self.assertEqual(availability.status_code, 200)
+        self.assertEqual(availability.data["slots"], [])
+
+    def test_admin_cannot_move_booking_to_conflicting_workstation_time(self) -> None:
+        first_id = self.create_booking(start_at=self.local_dt(10)).data["id"]
+        second_id = self.create_booking(start_at=self.local_dt(11)).data["id"]
+        first = Booking.objects.get(id=first_id)
+        response = self.auth_client(self.admin).patch(
+            f"/api/admin/bookings/{second_id}/",
+            {"start_at": first.start_at.isoformat(), "workstation": str(first.workstation_id)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_admin_can_move_booking_when_workstation_is_available(self) -> None:
+        booking_id = self.create_booking(start_at=self.local_dt(10)).data["id"]
+        response = self.auth_client(self.admin).patch(
+            f"/api/admin/bookings/{booking_id}/",
+            {"start_at": self.local_dt(12), "workstation": str(self.ws2.id)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        updated = Booking.objects.get(id=booking_id)
+        self.assertEqual(updated.workstation, self.ws2)
+        self.assertEqual(updated.start_at, self.local_datetime(12).astimezone(datetime_timezone.utc))
 
     def test_repeat_creation_is_protected_when_all_workstations_blocked(self) -> None:
         self.assertEqual(self.create_booking().status_code, 201)

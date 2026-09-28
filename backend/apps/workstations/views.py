@@ -1,6 +1,6 @@
 from rest_framework.viewsets import ModelViewSet
 
-from apps.services.views import IsAdminOrOwner
+from apps.accounts.permissions import IsAdminOrOwner
 
 from .models import Workstation
 from .serializers import WorkstationSerializer

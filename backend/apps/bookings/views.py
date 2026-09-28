@@ -1,19 +1,24 @@
-from datetime import date
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
+from apps.accounts.permissions import IsAdminOrOwner
+from apps.accounts.models import UserRole
 from apps.branches.models import Branch
 from apps.services.models import Service
-from apps.services.views import IsAdminOrOwner
 from apps.telegram_bot.permissions import IsClient
+from apps.workstations.models import Workstation
 
-from .models import Booking
+from .models import BLOCKING_BOOKING_STATUSES, Booking
 from .serializers import AdminBookingUpdateSerializer, BookingCreateSerializer, BookingSerializer
 from .services.availability_service import get_allowed_booking_dates, get_available_slots
 from .services.booking_service import cancel_client_booking
@@ -118,3 +123,47 @@ class AdminBookingViewSet(ModelViewSet):
         if self.action in {"partial_update", "update"}:
             return AdminBookingUpdateSerializer
         return BookingSerializer
+
+
+class AdminDashboardView(APIView):
+    permission_classes = [IsAdminOrOwner]
+
+    def get(self, request):
+        organization = request.user.organization
+        now = timezone.now()
+        branch = Branch.objects.filter(organization=organization, is_active=True).order_by("name").first()
+        branch_tz = ZoneInfo(branch.timezone) if branch else timezone.get_current_timezone()
+        today = now.astimezone(branch_tz).date()
+        tomorrow = today + timedelta(days=1)
+        today_start = datetime.combine(today, time.min, tzinfo=branch_tz)
+        tomorrow_start = datetime.combine(tomorrow, time.min, tzinfo=branch_tz)
+        day_after_tomorrow_start = tomorrow_start + timedelta(days=1)
+
+        org_bookings = Booking.objects.filter(organization=organization)
+        today_count = org_bookings.filter(start_at__gte=today_start, start_at__lt=tomorrow_start).count()
+        tomorrow_count = org_bookings.filter(start_at__gte=tomorrow_start, start_at__lt=day_after_tomorrow_start).count()
+        active_count = org_bookings.filter(status__in=BLOCKING_BOOKING_STATUSES).count()
+        clients_count = request.user.__class__.objects.filter(organization=organization, role=UserRole.CLIENT).count()
+        total_boxes = Workstation.objects.filter(branch__organization=organization, is_active=True).count()
+        occupied_boxes = (
+            org_bookings.filter(status__in=BLOCKING_BOOKING_STATUSES, start_at__lte=now, end_at__gt=now)
+            .values("workstation_id")
+            .distinct()
+            .count()
+        )
+
+        upcoming = org_bookings.filter(start_at__gte=now).select_related("branch", "car", "client", "service", "workstation").order_by("start_at")[:8]
+        by_status = org_bookings.values("status").annotate(count=Count("id")).order_by("status")
+        return Response(
+            {
+                "today_bookings": today_count,
+                "tomorrow_bookings": tomorrow_count,
+                "active_bookings": active_count,
+                "clients": clients_count,
+                "available_boxes": max(total_boxes - occupied_boxes, 0),
+                "occupied_boxes": occupied_boxes,
+                "total_boxes": total_boxes,
+                "bookings_by_status": {item["status"]: item["count"] for item in by_status},
+                "upcoming_bookings": BookingSerializer(upcoming, many=True).data,
+            }
+        )

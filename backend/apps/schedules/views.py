@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from apps.branches.models import Branch
-from apps.services.views import IsAdminOrOwner
+from apps.accounts.permissions import IsAdminOrOwner
 from apps.telegram_bot.permissions import IsClient
 
 from .models import BusinessHour, ScheduleException
