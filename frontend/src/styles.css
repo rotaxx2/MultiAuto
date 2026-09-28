@@ -500,6 +500,7 @@ button {
 }
 
 .admin-form,
+.admin-filter-bar,
 .admin-inline-form {
   display: flex;
   flex-wrap: wrap;
@@ -510,10 +511,21 @@ button {
   padding: 14px;
 }
 
+.admin-filter-bar {
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+}
+
 .admin-form input,
 .admin-form select,
+.admin-filter-bar input,
+.admin-filter-bar select,
 .admin-inline-form input,
 .admin-inline-form select,
+.admin-edit-row input,
+.admin-edit-row select,
 .admin-row select,
 .admin-row input {
   min-height: 38px;
@@ -522,6 +534,21 @@ button {
   background: #ffffff;
   border: 1px solid #ccd5e1;
   border-radius: 8px;
+}
+
+.admin-edit-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) 120px 120px minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+}
+
+.admin-edit-row.compact-edit {
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) auto auto;
 }
 
 .admin-pill {
@@ -566,6 +593,11 @@ button {
   }
 
   .admin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-edit-row,
+  .admin-edit-row.compact-edit {
     grid-template-columns: 1fr;
   }
 }

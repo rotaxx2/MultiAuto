@@ -41,6 +41,10 @@ function statusClass(active: boolean) {
   return active ? 'admin-pill active' : 'admin-pill muted-pill';
 }
 
+function toDateInputValue(value: string) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
 export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
   const [page, setPage] = useState<AdminPage>(initialPage);
   const [loading, setLoading] = useState(true);
@@ -125,7 +129,7 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
         {loading ? <p className="muted">Загружаем административные данные...</p> : null}
         {error ? <p className="inline-error">{error}</p> : null}
         {!loading && !error && page === 'dashboard' ? <DashboardView dashboard={dashboard} /> : null}
-        {!loading && !error && page === 'bookings' ? <BookingsAdminView bookings={bookings} boxes={boxes} onReload={loadAdminData} /> : null}
+        {!loading && !error && page === 'bookings' ? <BookingsAdminView bookings={bookings} boxes={boxes} branches={branches} onReload={loadAdminData} /> : null}
         {!loading && !error && page === 'clients' ? <ClientsAdminView clients={clients} /> : null}
         {!loading && !error && page === 'services' ? <ServicesAdminView services={services} onReload={loadAdminData} /> : null}
         {!loading && !error && page === 'branches' ? <BranchesAdminView branches={branches} onReload={loadAdminData} /> : null}
@@ -178,10 +182,27 @@ function DashboardView({ dashboard }: { dashboard: AdminDashboard }) {
   );
 }
 
-function BookingsAdminView({ bookings, boxes, onReload }: { bookings: Booking[]; boxes: Workstation[]; onReload: () => Promise<void> }) {
+function BookingsAdminView({ bookings, boxes, branches, onReload }: { bookings: Booking[]; boxes: Workstation[]; branches: Branch[]; onReload: () => Promise<void> }) {
+  const [dateFilter, setDateFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  const filteredBookings = bookings.filter((booking) => {
+    const matchesDate = !dateFilter || toDateInputValue(booking.start_at) === dateFilter;
+    const matchesStatus = !statusFilter || booking.status === statusFilter;
+    const matchesBranch = !branchFilter || booking.branch === branchFilter;
+    return matchesDate && matchesStatus && matchesBranch;
+  });
+
   async function updateStatus(id: string, status: string) {
-    await adminApi.updateBooking(id, { status });
-    await onReload();
+    try {
+      setActionError('');
+      await adminApi.updateBooking(id, { status });
+      await onReload();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : 'Не удалось изменить статус.');
+    }
   }
 
   async function moveBooking(event: FormEvent<HTMLFormElement>, booking: Booking) {
@@ -190,13 +211,31 @@ function BookingsAdminView({ bookings, boxes, onReload }: { bookings: Booking[];
     const start_at = String(form.get('start_at') || '');
     const workstation = String(form.get('workstation') || '');
     if (!start_at || !workstation) return;
-    await adminApi.updateBooking(booking.id, { start_at: new Date(start_at).toISOString(), workstation });
-    await onReload();
+    try {
+      setActionError('');
+      await adminApi.updateBooking(booking.id, { start_at: new Date(start_at).toISOString(), workstation });
+      await onReload();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : 'Не удалось перенести запись.');
+    }
   }
 
   return (
-    <div className="admin-list">
-      {bookings.map((booking) => (
+    <section className="admin-stack">
+      <div className="admin-filter-bar">
+        <input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} />
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="">Все статусы</option>
+          {['PENDING', 'CONFIRMED', 'ARRIVED', 'IN_PROGRESS', 'READY', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((status) => <option key={status}>{status}</option>)}
+        </select>
+        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+          <option value="">Все филиалы</option>
+          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+        </select>
+      </div>
+      {actionError ? <p className="inline-error">{actionError}</p> : null}
+      <div className="admin-list">
+      {filteredBookings.map((booking) => (
         <article className="admin-row" key={booking.id}>
           <div>
             <strong>{formatDateTime(booking.start_at)}</strong>
@@ -215,7 +254,9 @@ function BookingsAdminView({ bookings, boxes, onReload }: { bookings: Booking[];
           </form>
         </article>
       ))}
-    </div>
+      {!filteredBookings.length ? <p className="muted">Записи по выбранным фильтрам не найдены.</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -245,15 +286,30 @@ function ServicesAdminView({ services, onReload }: { services: Service[]; onRelo
     event.currentTarget.reset();
     await onReload();
   }
+  async function update(event: FormEvent<HTMLFormElement>, service: Service) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await adminApi.updateService(service.id, {
+      name: String(form.get('name')),
+      description: String(form.get('description') || ''),
+      duration_minutes: Number(form.get('duration_minutes')),
+      price: String(form.get('price')),
+      is_active: form.get('is_active') === 'on',
+    });
+    await onReload();
+  }
+
   return (
     <CrudSection onSubmit={create} fields={[['name', 'Название'], ['duration_minutes', 'Длительность, мин'], ['price', 'Цена'], ['description', 'Описание']]}>
       {services.map((service) => (
-        <article className="admin-row" key={service.id}>
-          <div><strong>{service.name}</strong><span>{service.duration_minutes} мин · {service.price}</span></div>
-          <button className={statusClass(service.is_active)} type="button" onClick={() => void adminApi.updateService(service.id, { is_active: !service.is_active }).then(onReload)}>
-            {service.is_active ? 'Активна' : 'Отключена'}
-          </button>
-        </article>
+        <form className="admin-edit-row" key={service.id} onSubmit={(event) => void update(event, service)}>
+          <input name="name" defaultValue={service.name} aria-label="Название услуги" />
+          <input name="duration_minutes" type="number" min="1" defaultValue={service.duration_minutes} aria-label="Длительность" />
+          <input name="price" type="number" min="0" step="0.01" defaultValue={service.price} aria-label="Цена" />
+          <input name="description" defaultValue={service.description} aria-label="Описание" />
+          <label className="admin-check"><input name="is_active" type="checkbox" defaultChecked={service.is_active} /> Активна</label>
+          <button className="secondary-button" type="submit">Сохранить</button>
+        </form>
       ))}
     </CrudSection>
   );
@@ -273,15 +329,30 @@ function BranchesAdminView({ branches, onReload }: { branches: Branch[]; onReloa
     event.currentTarget.reset();
     await onReload();
   }
+  async function update(event: FormEvent<HTMLFormElement>, branch: Branch) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await adminApi.updateBranch(branch.id, {
+      name: String(form.get('name')),
+      address: String(form.get('address')),
+      phone: String(form.get('phone') || ''),
+      timezone: String(form.get('timezone') || 'UTC'),
+      is_active: form.get('is_active') === 'on',
+    });
+    await onReload();
+  }
+
   return (
     <CrudSection onSubmit={create} fields={[['name', 'Название'], ['address', 'Адрес'], ['phone', 'Телефон'], ['timezone', 'Timezone']]}>
       {branches.map((branch) => (
-        <article className="admin-row" key={branch.id}>
-          <div><strong>{branch.name}</strong><span>{branch.address} · {branch.timezone}</span></div>
-          <button className={statusClass(branch.is_active)} type="button" onClick={() => void adminApi.updateBranch(branch.id, { is_active: !branch.is_active }).then(onReload)}>
-            {branch.is_active ? 'Активен' : 'Отключен'}
-          </button>
-        </article>
+        <form className="admin-edit-row" key={branch.id} onSubmit={(event) => void update(event, branch)}>
+          <input name="name" defaultValue={branch.name} aria-label="Название филиала" />
+          <input name="address" defaultValue={branch.address} aria-label="Адрес" />
+          <input name="phone" defaultValue={branch.phone} aria-label="Телефон" />
+          <input name="timezone" defaultValue={branch.timezone} aria-label="Timezone" />
+          <label className="admin-check"><input name="is_active" type="checkbox" defaultChecked={branch.is_active} /> Активен</label>
+          <button className="secondary-button" type="submit">Сохранить</button>
+        </form>
       ))}
     </CrudSection>
   );
@@ -295,6 +366,17 @@ function BoxesAdminView({ boxes, branches, onReload }: { boxes: Workstation[]; b
     event.currentTarget.reset();
     await onReload();
   }
+  async function update(event: FormEvent<HTMLFormElement>, box: Workstation) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await adminApi.updateBox(box.id, {
+      branch: String(form.get('branch')),
+      name: String(form.get('name')),
+      is_active: form.get('is_active') === 'on',
+    });
+    await onReload();
+  }
+
   return (
     <section className="admin-stack">
       <form className="admin-form" onSubmit={(event) => void create(event)}>
@@ -303,12 +385,12 @@ function BoxesAdminView({ boxes, branches, onReload }: { boxes: Workstation[]; b
         <button className="primary-button compact" type="submit">Создать</button>
       </form>
       {boxes.map((box) => (
-        <article className="admin-row" key={box.id}>
-          <div><strong>{box.name}</strong><span>{branches.find((branch) => branch.id === box.branch)?.name}</span></div>
-          <button className={statusClass(box.is_active)} type="button" onClick={() => void adminApi.updateBox(box.id, { is_active: !box.is_active }).then(onReload)}>
-            {box.is_active ? 'Активен' : 'Отключен'}
-          </button>
-        </article>
+        <form className="admin-edit-row compact-edit" key={box.id} onSubmit={(event) => void update(event, box)}>
+          <select name="branch" defaultValue={box.branch} required>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select>
+          <input name="name" defaultValue={box.name} aria-label="Название бокса" />
+          <label className="admin-check"><input name="is_active" type="checkbox" defaultChecked={box.is_active} /> Активен</label>
+          <button className="secondary-button" type="submit">Сохранить</button>
+        </form>
       ))}
     </section>
   );
