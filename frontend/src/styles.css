@@ -1,6 +1,14 @@
 :root {
   color: var(--tg-theme-text-color, #17212b);
   background: var(--tg-theme-bg-color, #f4f6f8);
+  --app-bg: var(--tg-theme-bg-color, #f4f6f8);
+  --app-surface: var(--tg-theme-secondary-bg-color, #ffffff);
+  --app-text: var(--tg-theme-text-color, #17212b);
+  --app-muted: var(--tg-theme-hint-color, #667085);
+  --app-primary: var(--tg-theme-button-color, #2481cc);
+  --app-primary-text: var(--tg-theme-button-text-color, #ffffff);
+  --app-border: rgba(127, 127, 127, 0.16);
+  --app-radius: 8px;
   font-family:
     Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -20,6 +28,28 @@ body {
 
 button {
   font: inherit;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
 }
 
 .app-shell {
@@ -38,6 +68,17 @@ button {
   gap: 16px;
 }
 
+.page-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.page-heading p {
+  margin: 0;
+  color: var(--app-muted);
+  line-height: 1.45;
+}
+
 .page h1,
 .hero h1,
 .state-view h2 {
@@ -54,6 +95,37 @@ button {
   display: grid;
   gap: 8px;
   padding: 18px 0 6px;
+}
+
+.client-hero {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  color: var(--app-primary-text);
+  background: linear-gradient(135deg, #2481cc, #18a0a6);
+  border-radius: var(--app-radius);
+}
+
+.client-hero h1,
+.client-hero p {
+  margin: 0;
+}
+
+.client-hero .eyebrow,
+.client-hero p {
+  color: inherit;
+  opacity: 0.9;
+}
+
+.hero-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  color: #155e75;
+  background: #ffffff;
 }
 
 .hero h1 {
@@ -93,6 +165,13 @@ button {
   background: var(--tg-theme-secondary-bg-color, #ffffff);
   border: 1px solid rgba(127, 127, 127, 0.16);
   border-radius: 8px;
+}
+
+.action-card:hover,
+.choice-card:hover,
+.booking-card:hover,
+.car-card:hover {
+  border-color: rgba(36, 129, 204, 0.45);
 }
 
 .action-card.primary {
@@ -233,7 +312,11 @@ button {
 
 .inline-error {
   margin: 0;
+  padding: 12px;
   color: #b42318;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  border-radius: var(--app-radius);
 }
 
 .muted {
@@ -242,7 +325,7 @@ button {
 
 .slot-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -264,6 +347,11 @@ button {
   border: 1px solid rgba(127, 127, 127, 0.22);
   border-radius: 8px;
   font-weight: 700;
+}
+
+.slot-button {
+  min-height: 64px;
+  text-align: left;
 }
 
 .date-button small,
@@ -293,6 +381,198 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.step-card,
+.summary-card,
+.booking-card,
+.car-card,
+.success-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+}
+
+.step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-title span {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--app-primary-text);
+  background: var(--app-primary);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.step-title h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.choice-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px;
+  color: var(--app-text);
+  text-align: left;
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+}
+
+.choice-card span,
+.choice-card small {
+  color: var(--app-muted);
+}
+
+.choice-card.active {
+  background: rgba(36, 129, 204, 0.1);
+  border-color: var(--app-primary);
+}
+
+.price-chip {
+  justify-self: start;
+  padding: 4px 8px;
+  color: #0b5cab !important;
+  background: #e8f2ff;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.summary-card div {
+  display: grid;
+  gap: 3px;
+}
+
+.summary-card div span,
+.booking-meta span,
+.car-card small {
+  color: var(--app-muted);
+}
+
+.success-panel {
+  color: #064e3b;
+  background: #ecfdf3;
+  border-color: #abefc6;
+}
+
+.success-panel h1,
+.success-panel p {
+  margin: 0;
+}
+
+.booking-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.booking-meta {
+  display: grid;
+  gap: 5px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 8px;
+  white-space: nowrap;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.status-badge.warning {
+  color: #93370d;
+  background: #fffaeb;
+  border-color: #fedf89;
+}
+
+.status-badge.info {
+  color: #175cd3;
+  background: #eff8ff;
+  border-color: #b2ddff;
+}
+
+.status-badge.progress {
+  color: #6941c6;
+  background: #f4f3ff;
+  border-color: #d9d6fe;
+}
+
+.status-badge.success {
+  color: #067647;
+  background: #ecfdf3;
+  border-color: #abefc6;
+}
+
+.status-badge.danger {
+  color: #b42318;
+  background: #fef3f2;
+  border-color: #fecdca;
+}
+
+.status-badge.neutral {
+  color: #475467;
+  background: #f8fafc;
+}
+
+.plate {
+  justify-self: start;
+  padding: 5px 8px;
+  color: var(--app-text);
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.empty-note {
+  padding: 14px;
+  color: var(--app-muted);
+  background: var(--app-surface);
+  border: 1px dashed rgba(127, 127, 127, 0.3);
+  border-radius: var(--app-radius);
+}
+
+.skeleton-list {
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton-list span {
+  display: block;
+  height: 54px;
+  background: linear-gradient(90deg, rgba(127, 127, 127, 0.08), rgba(127, 127, 127, 0.18), rgba(127, 127, 127, 0.08));
+  background-size: 200% 100%;
+  border-radius: var(--app-radius);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .bottom-nav {

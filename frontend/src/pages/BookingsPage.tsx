@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react';
 import { cancelBooking, getMyBookings } from '../api/profile';
 import { StateView } from '../components/StateView';
 import type { Booking } from '../types/api';
+import { formatBookingStatus, formatDateTime, formatPrice, humanizeError, statusBadgeClass } from '../utils/format';
 
 export function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -19,7 +21,7 @@ export function BookingsPage() {
       })
       .catch((caught: unknown) => {
         if (mounted) {
-          setError(caught instanceof Error ? caught.message : 'Не удалось загрузить записи');
+          setError(humanizeError(caught, 'Не удалось загрузить записи. Попробуйте еще раз.'));
         }
       })
       .finally(() => {
@@ -34,12 +36,19 @@ export function BookingsPage() {
   }, []);
 
   const cancel = async (id: string) => {
+    const confirmed = window.confirm('Вы уверены, что хотите отменить запись?');
+    if (!confirmed) {
+      return;
+    }
     setError('');
+    setCancellingId(id);
     try {
       const updated = await cancelBooking(id);
       setBookings((items) => items.map((booking) => (booking.id === id ? updated : booking)));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Не удалось отменить запись');
+      setError(humanizeError(caught, 'Не удалось отменить запись. Попробуйте еще раз.'));
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -47,27 +56,33 @@ export function BookingsPage() {
     return <StateView title="Загрузка..." description="Получаем ваши записи." />;
   }
 
-  if (error) {
-    return <StateView title="Не удалось загрузить данные" description={error} />;
-  }
-
   return (
     <section className="page">
-      <h1>Записи</h1>
+      <div className="page-heading">
+        <p className="eyebrow">Мои записи</p>
+        <h1>Текущие и будущие визиты</h1>
+        <p>Здесь отображаются ваши записи и их статусы.</p>
+      </div>
+      {error ? <p className="inline-error">{error}</p> : null}
       {bookings.length === 0 ? (
         <StateView title="Нет записей" description="Создайте первую запись через раздел записи." />
       ) : (
         <div className="list">
           {bookings.map((booking) => (
-            <article className="list-item" key={booking.id}>
-              <strong>{booking.service_name}</strong>
-              <span>{booking.branch_name}</span>
-              <small>
-                {new Date(booking.start_at).toLocaleString()} · {booking.status} · {booking.price} ₽
-              </small>
+            <article className="booking-card" key={booking.id}>
+              <div className="booking-card-header">
+                <strong>{booking.service_name}</strong>
+                <span className={statusBadgeClass(booking.status)}>{formatBookingStatus(booking.status)}</span>
+              </div>
+              <div className="booking-meta">
+                <span>{formatDateTime(booking.start_at)}</span>
+                <span>{booking.branch_name}</span>
+                <span>{booking.car_label}</span>
+                <span>{formatPrice(booking.price)}</span>
+              </div>
               {booking.status === 'PENDING' ? (
-                <button className="danger-button" type="button" onClick={() => void cancel(booking.id)}>
-                  Отменить
+                <button className="danger-button" disabled={cancellingId === booking.id} type="button" onClick={() => void cancel(booking.id)}>
+                  {cancellingId === booking.id ? 'Отменяем...' : 'Отменить запись'}
                 </button>
               ) : null}
             </article>

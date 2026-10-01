@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { createBooking, getAvailability, getAvailableDates, getBranches, getMyCars, getServices } from '../api/profile';
 import { StateView } from '../components/StateView';
-import type { AvailabilitySlot, AvailableDate, Branch, Car, Service } from '../types/api';
+import type { AvailabilitySlot, AvailableDate, Booking, Branch, Car, Service } from '../types/api';
 import type { PageId } from '../types/navigation';
+import { carTitle, formatDate, formatPrice, formatTime, formatVisitDate, humanizeError } from '../utils/format';
 
 interface CreateBookingPageProps {
   onNavigate: (page: PageId) => void;
@@ -22,6 +23,8 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
   const [slot, setSlot] = useState<AvailabilitySlot | null>(null);
   const [loading, setLoading] = useState(true);
   const [slotLoading, setSlotLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [createdBooking, setCreatedBooking] = useState<Booking | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -34,7 +37,7 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
         setServiceId(serviceResponse.results[0]?.id ?? '');
         setCarId(carResponse.results[0]?.id ?? '');
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : 'Не удалось загрузить данные для записи'))
+      .catch((caught) => setError(humanizeError(caught, 'Не удалось загрузить данные для записи. Попробуйте еще раз.')))
       .finally(() => setLoading(false));
   }, []);
 
@@ -50,7 +53,7 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
         setDates(response.dates);
         setDate(response.dates.find((item) => item.is_available)?.date ?? response.dates[0]?.date ?? '');
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : 'Не удалось загрузить даты записи'));
+      .catch((caught) => setError(humanizeError(caught, 'Не удалось загрузить даты записи. Попробуйте еще раз.')));
   }, [branchId]);
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
     setSlotLoading(true);
     getAvailability(branchId, serviceId, date)
       .then((response) => setSlots(response.slots))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : 'Не удалось загрузить свободное время'))
+      .catch((caught) => setError(humanizeError(caught, 'Не удалось загрузить свободное время. Попробуйте обновить список.')))
       .finally(() => setSlotLoading(false));
   }, [branchId, date, serviceId]);
 
@@ -70,20 +73,23 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
   const selectedCar = useMemo(() => cars.find((item) => item.id === carId), [carId, cars]);
 
   const submit = async () => {
-    if (!slot || !selectedBranch || !selectedService || !selectedCar) {
+    if (!slot || !selectedBranch || !selectedService || !selectedCar || submitting) {
       return;
     }
     setError('');
+    setSubmitting(true);
     try {
-      await createBooking({
+      const booking = await createBooking({
         branch_id: selectedBranch.id,
         service_id: selectedService.id,
         car_id: selectedCar.id,
         start_at: slot.start_at,
       });
-      onNavigate('bookings');
+      setCreatedBooking(booking);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Не удалось создать запись');
+      setError(humanizeError(caught, 'Не удалось создать запись. Проверьте выбранное время и попробуйте еще раз.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -102,45 +108,80 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
     );
   }
 
+  if (createdBooking) {
+    return (
+      <section className="page">
+        <div className="success-panel">
+          <p className="eyebrow">Готово</p>
+          <h1>Запись создана</h1>
+          <p>Мы сохранили вашу запись. Напоминание придет в Telegram ближе к визиту.</p>
+        </div>
+        <div className="summary-card">
+          <div><span>Филиал</span><strong>{createdBooking.branch_name}</strong></div>
+          <div><span>Услуга</span><strong>{createdBooking.service_name}</strong></div>
+          <div><span>Автомобиль</span><strong>{createdBooking.car_label}</strong></div>
+          <div><span>Дата и время</span><strong>{formatVisitDate(createdBooking.start_at)}, {formatTime(createdBooking.start_at)}</strong></div>
+          <div><span>Стоимость</span><strong>{formatPrice(createdBooking.price)}</strong></div>
+        </div>
+        <div className="button-row">
+          <button className="primary-button compact" type="button" onClick={() => onNavigate('bookings')}>Мои записи</button>
+          <button className="secondary-button" type="button" onClick={() => onNavigate('home')}>На главную</button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="page">
-      <h1>Новая запись</h1>
+      <div className="page-heading">
+        <p className="eyebrow">Новая запись</p>
+        <h1>Выберите удобное время</h1>
+        <p>Филиал, услуга, автомобиль, дата и свободный слот.</p>
+      </div>
       {error ? <p className="inline-error">{error}</p> : null}
-      <div className="form">
-        <label>
-          Филиал
-          <select value={branchId} onChange={(event) => setBranchId(event.target.value)}>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Услуга
-          <select value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
-            {services.map((service) => (
-              <option key={service.id} value={service.id}>
-                {service.name} · {service.price} ₽
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Автомобиль
-          <select value={carId} onChange={(event) => setCarId(event.target.value)}>
-            {cars.map((car) => (
-              <option key={car.id} value={car.id}>
-                {car.brand} {car.model} · {car.license_plate}
-              </option>
-            ))}
-          </select>
-        </label>
+
+      <div className="step-card">
+        <div className="step-title"><span>1</span><h2>Филиал</h2></div>
+        <div className="choice-list">
+          {branches.map((branch) => (
+            <button className={branchId === branch.id ? 'choice-card active' : 'choice-card'} key={branch.id} type="button" onClick={() => setBranchId(branch.id)}>
+              <strong>{branch.name}</strong>
+              <span>{branch.address}</span>
+              <small>{branch.is_active ? 'Открыт для записи' : 'Недоступен'}</small>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="list">
-        <h2 className="section-title">Дата</h2>
+      <div className="step-card">
+        <div className="step-title"><span>2</span><h2>Услуга</h2></div>
+        <div className="choice-list">
+          {services.map((service) => (
+            <button className={serviceId === service.id ? 'choice-card active' : 'choice-card'} key={service.id} type="button" onClick={() => setServiceId(service.id)}>
+              <strong>{service.name}</strong>
+              <span>{service.description || `${service.duration_minutes} минут`}</span>
+              <small className="price-chip">{formatPrice(service.price)}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="step-card">
+        <div className="step-title"><span>3</span><h2>Автомобиль</h2></div>
+        <div className="choice-list">
+          {cars.map((car) => (
+            <button className={carId === car.id ? 'choice-card active' : 'choice-card'} key={car.id} type="button" onClick={() => setCarId(car.id)}>
+              <strong>{carTitle(car)}</strong>
+              <span>{car.license_plate}</span>
+              <small>{car.color}{car.year ? ` · ${car.year}` : ''}</small>
+            </button>
+          ))}
+        </div>
+        <button className="secondary-button" type="button" onClick={() => onNavigate('cars')}>Добавить автомобиль</button>
+      </div>
+
+      <div className="step-card">
+        <div className="step-title"><span>4</span><h2>Дата</h2></div>
         <div className="date-grid">
           {dates.map((item) => (
             <button
@@ -151,44 +192,37 @@ export function CreateBookingPage({ onNavigate }: CreateBookingPageProps) {
               onClick={() => setDate(item.date)}
             >
               <span>{item.label}</span>
-              <small>{new Date(`${item.date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</small>
+              <small>{formatDate(item.date)}</small>
             </button>
           ))}
         </div>
+      </div>
 
-        <h2 className="section-title">Свободное время</h2>
-        {slotLoading ? <span className="muted">Загрузка...</span> : null}
-        {!slotLoading && slots.length === 0 ? <span className="muted">Нет доступных интервалов</span> : null}
+      <div className="step-card">
+        <div className="step-title"><span>5</span><h2>Время</h2></div>
+        {slotLoading ? <div className="skeleton-list"><span /><span /><span /></div> : null}
+        {!slotLoading && slots.length === 0 ? <p className="empty-note">На эту дату свободных мест нет. Выберите другой день.</p> : null}
         <div className="slot-grid">
-          {slots.map((item) => (
-            <button
-              className={slot?.start_at === item.start_at ? 'slot-button active' : 'slot-button'}
-              key={item.start_at}
-              type="button"
-              onClick={() => setSlot(item)}
-            >
-              <span>{new Date(item.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              <small>Свободно {item.free_workstations} из {item.total_workstations}</small>
+          {slots.filter((item) => item.is_available).map((item) => (
+            <button className={slot?.start_at === item.start_at ? 'slot-button active' : 'slot-button'} key={item.start_at} type="button" onClick={() => setSlot(item)}>
+              <span>{formatTime(item.start_at)}</span>
+              <small>{item.free_workstations} {item.free_workstations === 1 ? 'бокс свободен' : 'бокса свободно'}</small>
             </button>
           ))}
         </div>
       </div>
 
       {slot && selectedBranch && selectedService && selectedCar ? (
-        <div className="form">
-          <h2 className="section-title">Подтверждение</h2>
-          <p>{selectedBranch.name}</p>
-          <p>
-            {selectedService.name} · {selectedService.duration_minutes} минут · {selectedService.price} ₽
-          </p>
-          <p>
-            {selectedCar.brand} {selectedCar.model} · {selectedCar.license_plate}
-          </p>
-          <p>
-            {new Date(slot.start_at).toLocaleString()} · свободно {slot.free_workstations} из {slot.total_workstations}
-          </p>
-          <button className="primary-button compact" type="button" onClick={() => void submit()}>
-            Подтвердить запись
+        <div className="summary-card">
+          <h2 className="section-title">Ваша запись</h2>
+          <div><span>Филиал</span><strong>{selectedBranch.name}</strong></div>
+          <div><span>Услуга</span><strong>{selectedService.name} · {formatPrice(selectedService.price)}</strong></div>
+          <div><span>Автомобиль</span><strong>{carTitle(selectedCar)} · {selectedCar.license_plate}</strong></div>
+          <div><span>Дата</span><strong>{formatVisitDate(slot.start_at)}</strong></div>
+          <div><span>Время</span><strong>{formatTime(slot.start_at)}</strong></div>
+          <div><span>Свободные боксы</span><strong>{slot.free_workstations} из {slot.total_workstations}</strong></div>
+          <button className="primary-button compact" disabled={submitting} type="button" onClick={() => void submit()}>
+            {submitting ? 'Создаем запись...' : 'Подтвердить запись'}
           </button>
         </div>
       ) : null}

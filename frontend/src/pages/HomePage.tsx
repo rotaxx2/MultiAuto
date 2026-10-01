@@ -13,17 +13,21 @@ export function HomePage({ user, onNavigate }: HomePageProps) {
 
   return (
     <section className="page">
-      <div className="hero">
+      <div className="client-hero">
         <p className="eyebrow">MultiAuto</p>
-        <h1>Здравствуйте, {displayName}</h1>
-        <p>{user.organization?.name ?? 'Выберите автомойку через Telegram-бота, чтобы продолжить запись.'}</p>
+        <h1>Запись на автомойку онлайн</h1>
+        <p>Здравствуйте, {displayName}. {user.organization?.name ?? 'Выберите автомойку через Telegram-бота, чтобы продолжить запись.'}</p>
+        <button className="primary-button hero-button" type="button" onClick={() => onNavigate('booking-create')}>
+          <CalendarPlus size={20} aria-hidden="true" />
+          Записаться на мойку
+        </button>
       </div>
 
       <div className="action-grid">
         <button className="action-card primary" type="button" onClick={() => onNavigate('booking-create')}>
           <CalendarPlus size={24} aria-hidden="true" />
           <span>Записаться на мойку</span>
-          <small>Скоро подключим выбор услуги и времени</small>
+          <small>Выберите филиал, услугу и удобное время</small>
         </button>
         <button className="action-card" type="button" onClick={() => onNavigate('cars')}>
           <CarFront size={24} aria-hidden="true" />
