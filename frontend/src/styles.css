@@ -894,6 +894,200 @@ select:focus-visible {
   color: #475467;
 }
 
+.admin-section-header,
+.admin-panel-head,
+.admin-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.admin-section-header {
+  padding: 2px 2px 0;
+}
+
+.admin-section-header .section-title,
+.admin-panel-head .section-title,
+.admin-detail-head h3 {
+  margin: 0;
+}
+
+.admin-panel,
+.admin-detail-panel,
+.admin-empty,
+.admin-success,
+.admin-schedule-card {
+  background: #ffffff;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+}
+
+.admin-panel,
+.admin-detail-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.admin-metrics {
+  grid-template-columns: repeat(5, minmax(128px, 1fr));
+}
+
+.admin-metric {
+  min-height: 96px;
+}
+
+.admin-metric strong {
+  line-height: 1;
+}
+
+.admin-search {
+  display: grid;
+  grid-template-columns: 18px minmax(180px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #667085;
+  background: #ffffff;
+  border: 1px solid #ccd5e1;
+  border-radius: 8px;
+}
+
+.admin-search input {
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+}
+
+.admin-detail-grid,
+.admin-comments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.admin-comments {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.admin-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+}
+
+.admin-field span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.admin-field strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #182230;
+  font-size: 14px;
+}
+
+.admin-booking-edit {
+  grid-template-columns: minmax(180px, 0.9fr) minmax(180px, 0.9fr) minmax(160px, 0.9fr) minmax(220px, 1.2fr) auto;
+}
+
+.admin-booking-edit textarea {
+  min-height: 72px;
+  padding: 10px;
+  color: #182230;
+  resize: vertical;
+  background: #ffffff;
+  border: 1px solid #ccd5e1;
+  border-radius: 8px;
+}
+
+.admin-success {
+  margin: 0;
+  padding: 12px 14px;
+  color: #067647;
+  background: #ecfdf3;
+  border-color: #abefc6;
+  font-weight: 650;
+}
+
+.admin-empty {
+  padding: 18px;
+  color: #667085;
+  text-align: center;
+  background: #ffffff;
+}
+
+.admin-table tbody tr.selected {
+  background: #f0f7ff;
+}
+
+.admin-mobile-list {
+  display: none;
+  gap: 10px;
+}
+
+.admin-booking-card {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  width: 100%;
+  padding: 14px;
+  color: #182230;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+}
+
+.admin-booking-card.selected {
+  border-color: #84caff;
+  box-shadow: 0 0 0 3px #e0f2fe;
+}
+
+.admin-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.admin-schedule-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 120px 120px auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+}
+
+.admin-schedule-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-schedule-card span {
+  color: #667085;
+}
+
+.admin-schedule-card input {
+  min-height: 38px;
+  padding: 0 10px;
+  color: #182230;
+  background: #ffffff;
+  border: 1px solid #ccd5e1;
+  border-radius: 8px;
+}
+
+.admin-desktop-only {
+  display: block;
+}
+
 @media (max-width: 900px) {
   .admin-shell {
     grid-template-columns: 1fr;
@@ -917,5 +1111,39 @@ select:focus-visible {
   .admin-edit-row,
   .admin-edit-row.compact-edit {
     grid-template-columns: 1fr;
+  }
+
+  .admin-main {
+    padding: 18px 14px 24px;
+  }
+
+  .admin-header {
+    align-items: flex-start;
+  }
+
+  .admin-filter-bar,
+  .admin-form {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .admin-search {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .admin-detail-grid,
+  .admin-comments,
+  .admin-booking-edit,
+  .admin-schedule-grid,
+  .admin-schedule-card {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-desktop-only {
+    display: none;
+  }
+
+  .admin-mobile-list {
+    display: grid;
   }
 }
