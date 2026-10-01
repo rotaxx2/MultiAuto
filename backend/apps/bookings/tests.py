@@ -403,7 +403,7 @@ class BookingEngineTests(TestCase):
         create_response = self.create_booking(start_at=datetime.combine(too_far, time(10), tzinfo=self.branch_tz).isoformat())
         self.assertEqual(create_response.status_code, 400)
 
-    @patch("apps.bookings.management.commands.send_booking_reminders.send_telegram_message", return_value=True)
+    @patch("apps.bookings.services.reminder_service.send_telegram_message", return_value=True)
     def test_send_reminders_skips_cancelled_bookings_and_marks_sent_once(self, _send_message) -> None:
         from django.core.management import call_command
 
@@ -449,3 +449,144 @@ class BookingEngineTests(TestCase):
 
         call_command("send_booking_reminders")
         self.assertEqual(BookingReminder.objects.filter(sent_at__isnull=False).count(), 1)
+
+    def test_celery_tasks_are_registered(self) -> None:
+        from config.celery import app
+
+        app.loader.import_default_modules()
+        self.assertIn("apps.bookings.tasks.process_due_booking_reminders", app.tasks)
+        self.assertIn("apps.bookings.tasks.send_booking_reminder", app.tasks)
+
+    def test_reminder_service_sends_correct_booking_and_keeps_tenant_context(self) -> None:
+        from apps.bookings.services.reminder_service import process_due_booking_reminders
+
+        own_booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        other_booking = Booking.objects.create(
+            organization=self.other_org,
+            branch=self.other_branch,
+            client=self.other_admin,
+            car=Car.objects.create(owner=self.other_admin, brand="Kia", model="Rio", license_plate="O111OO", color="Red"),
+            service=self.other_service,
+            workstation=self.other_ws,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.other_service.price,
+            status=BookingStatus.PENDING,
+        )
+        BookingReminder.objects.create(booking=own_booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() - timedelta(minutes=1))
+        BookingReminder.objects.create(booking=other_booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() - timedelta(minutes=1))
+        calls: list[tuple[int | None, str]] = []
+
+        sent = process_due_booking_reminders(sender=lambda telegram_id, text: calls.append((telegram_id, text)) or True)
+
+        self.assertEqual(sent, 2)
+        self.assertEqual({call[0] for call in calls}, {self.client_user.telegram_id, self.other_admin.telegram_id})
+        self.assertTrue(any("Услуга: Wash" in call[1] for call in calls))
+        self.assertTrue(any("Услуга: Other" in call[1] for call in calls))
+
+    def test_reminder_service_skips_wrong_timing(self) -> None:
+        from apps.bookings.services.reminder_service import process_due_booking_reminders
+
+        future_booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        past_booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.other_client,
+            car=self.other_car,
+            service=self.service,
+            workstation=self.ws2,
+            start_at=timezone.now() - timedelta(minutes=5),
+            end_at=timezone.now() + timedelta(minutes=55),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        BookingReminder.objects.create(booking=future_booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() + timedelta(minutes=30))
+        BookingReminder.objects.create(booking=past_booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() - timedelta(minutes=30))
+
+        sent = process_due_booking_reminders(sender=lambda _telegram_id, _text: True)
+
+        self.assertEqual(sent, 0)
+        self.assertEqual(BookingReminder.objects.filter(sent_at__isnull=False).count(), 0)
+
+    def test_reminder_service_does_not_mark_sent_when_delivery_fails(self) -> None:
+        from apps.bookings.services.reminder_service import ReminderDeliveryError, process_due_booking_reminders
+
+        booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        reminder = BookingReminder.objects.create(booking=booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() - timedelta(minutes=1))
+
+        with self.assertRaises(ReminderDeliveryError):
+            process_due_booking_reminders(sender=lambda _telegram_id, _text: False)
+
+        reminder.refresh_from_db()
+        self.assertIsNone(reminder.sent_at)
+
+    @patch("apps.bookings.tasks.send_booking_reminder_task")
+    def test_process_due_reminders_task_enqueues_due_reminders(self, send_reminder_task) -> None:
+        from apps.bookings.tasks import process_due_booking_reminders
+
+        booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        reminder = BookingReminder.objects.create(booking=booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() - timedelta(minutes=1))
+
+        due_count = process_due_booking_reminders()
+
+        self.assertEqual(due_count, 1)
+        send_reminder_task.delay.assert_called_once_with(str(reminder.id))
+
+    @patch("apps.bookings.tasks.send_booking_reminder")
+    def test_send_reminder_task_retries_temporary_delivery_error(self, send_reminder) -> None:
+        from celery.exceptions import Retry
+        from unittest.mock import patch as mock_patch
+
+        from apps.bookings.services.reminder_service import ReminderDeliveryError
+        from apps.bookings.tasks import send_booking_reminder_task
+
+        send_reminder.side_effect = ReminderDeliveryError("temporary")
+
+        with mock_patch.object(send_booking_reminder_task, "retry", side_effect=Retry()) as retry:
+            with self.assertRaises(Retry):
+                send_booking_reminder_task.run("00000000-0000-0000-0000-000000000000")
+        retry.assert_called_once()

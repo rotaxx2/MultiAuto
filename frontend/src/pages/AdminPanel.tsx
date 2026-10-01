@@ -33,12 +33,40 @@ const emptyDashboard: AdminDashboard = {
   upcoming_bookings: [],
 };
 
+const bookingStatuses = ['PENDING', 'CONFIRMED', 'ARRIVED', 'IN_PROGRESS', 'READY', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+
+const statusLabels: Record<string, string> = {
+  PENDING: 'Ожидает',
+  CONFIRMED: 'Подтверждена',
+  ARRIVED: 'Клиент на месте',
+  IN_PROGRESS: 'В работе',
+  READY: 'Готово',
+  COMPLETED: 'Завершена',
+  CANCELLED: 'Отменена',
+  NO_SHOW: 'Не пришел',
+};
+
+const statusTone: Record<string, string> = {
+  PENDING: 'warning',
+  CONFIRMED: 'info',
+  ARRIVED: 'info',
+  IN_PROGRESS: 'progress',
+  READY: 'success',
+  COMPLETED: 'neutral',
+  CANCELLED: 'danger',
+  NO_SHOW: 'danger',
+};
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
 
-function statusClass(active: boolean) {
-  return active ? 'admin-pill active' : 'admin-pill muted-pill';
+function formatStatus(status: string) {
+  return statusLabels[status] ?? status;
+}
+
+function statusBadgeClass(status: string) {
+  return `admin-status-badge ${statusTone[status] ?? 'neutral'}`;
 }
 
 function toDateInputValue(value: string) {
@@ -126,7 +154,7 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
           <button className="secondary-button" type="button" onClick={loadAdminData}>Обновить</button>
         </header>
 
-        {loading ? <p className="muted">Загружаем административные данные...</p> : null}
+        {loading ? <div className="admin-loading">Загружаем административные данные...</div> : null}
         {error ? <p className="inline-error">{error}</p> : null}
         {!loading && !error && page === 'dashboard' ? <DashboardView dashboard={dashboard} /> : null}
         {!loading && !error && page === 'bookings' ? <BookingsAdminView bookings={bookings} boxes={boxes} branches={branches} onReload={loadAdminData} /> : null}
@@ -142,12 +170,12 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
 
 function DashboardView({ dashboard }: { dashboard: AdminDashboard }) {
   const stats = [
-    ['Today\'s bookings', dashboard.today_bookings],
-    ['Tomorrow\'s bookings', dashboard.tomorrow_bookings],
-    ['Active bookings', dashboard.active_bookings],
-    ['Clients', dashboard.clients],
-    ['Available boxes', dashboard.available_boxes],
-    ['Occupied boxes', dashboard.occupied_boxes],
+    ['Сегодня', dashboard.today_bookings],
+    ['Завтра', dashboard.tomorrow_bookings],
+    ['Активные записи', dashboard.active_bookings],
+    ['Клиенты', dashboard.clients],
+    ['Свободные боксы', dashboard.available_boxes],
+    ['Занятые боксы', dashboard.occupied_boxes],
   ];
   return (
     <section className="admin-stack">
@@ -172,9 +200,13 @@ function DashboardView({ dashboard }: { dashboard: AdminDashboard }) {
         <div>
           <h3 className="section-title">Статусы</h3>
           <div className="admin-status-list">
-            {Object.entries(dashboard.bookings_by_status).map(([status, count]) => (
-              <div key={status}><span>{status}</span><strong>{count}</strong></div>
-            ))}
+            {Object.entries(dashboard.bookings_by_status).length ? (
+              Object.entries(dashboard.bookings_by_status).map(([status, count]) => (
+                <div key={status}><span>{formatStatus(status)}</span><strong>{count}</strong></div>
+              ))
+            ) : (
+              <p className="muted">Записей пока нет.</p>
+            )}
           </div>
         </div>
       </div>
@@ -226,7 +258,7 @@ function BookingsAdminView({ bookings, boxes, branches, onReload }: { bookings: 
         <input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} />
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
           <option value="">Все статусы</option>
-          {['PENDING', 'CONFIRMED', 'ARRIVED', 'IN_PROGRESS', 'READY', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((status) => <option key={status}>{status}</option>)}
+          {bookingStatuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}
         </select>
         <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
           <option value="">Все филиалы</option>
@@ -239,11 +271,12 @@ function BookingsAdminView({ bookings, boxes, branches, onReload }: { bookings: 
         <article className="admin-row" key={booking.id}>
           <div>
             <strong>{formatDateTime(booking.start_at)}</strong>
+            <span className={statusBadgeClass(booking.status)}>{formatStatus(booking.status)}</span>
             <span>{booking.client_name} · {booking.car_label}</span>
             <span>{booking.service_name} · {booking.branch_name} · {booking.workstation_name}</span>
           </div>
           <select value={booking.status} onChange={(event) => void updateStatus(booking.id, event.target.value)}>
-            {['PENDING', 'CONFIRMED', 'ARRIVED', 'IN_PROGRESS', 'READY', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((status) => <option key={status}>{status}</option>)}
+            {bookingStatuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}
           </select>
           <form className="admin-inline-form" onSubmit={(event) => void moveBooking(event, booking)}>
             <input name="start_at" type="datetime-local" />

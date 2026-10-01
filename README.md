@@ -56,6 +56,8 @@ Organization
 - TypeScript
 - Vite
 - PostgreSQL
+- Redis
+- Celery
 - psycopg 3
 - python-dotenv
 - dj-database-url
@@ -137,6 +139,11 @@ TELEGRAM_BOT_TOKEN=your-bot-token-from-botfather
 TELEGRAM_BOT_USERNAME=your_bot_username
 TELEGRAM_MINI_APP_URL=http://localhost:5173
 TELEGRAM_DEFAULT_ORGANIZATION_SLUG=clean-auto
+BOOKING_REMINDER_POLL_SECONDS=300
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN=60
+CELERY_BOOKING_REMINDER_MAX_RETRIES=3
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
@@ -152,6 +159,8 @@ CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 - `TELEGRAM_BOT_USERNAME` - username созданного Telegram-бота.
 - `TELEGRAM_MINI_APP_URL` - URL Vite dev server локально или HTTPS URL production Mini App.
 - `TELEGRAM_DEFAULT_ORGANIZATION_SLUG` - slug организации из таблицы `organizations`, нужен для локального запуска без deep link.
+- `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND` - Redis URL для Celery worker, beat и результатов задач.
+- `CELERY_BOOKING_REMINDER_*` - retry-настройки отправки reminder-уведомлений.
 - `CORS_ALLOWED_ORIGINS` и `CSRF_TRUSTED_ORIGINS` - frontend origins, которым разрешено обращаться к backend.
 
 `.env.example` хранит только шаблон и безопасные примеры. Реальные пароли, токены и production hosts пишутся в локальный `.env`, который уже исключен в `.gitignore`.
@@ -198,6 +207,27 @@ python manage.py runserver
 python manage.py run_telegram_bot
 ```
 
+Запустить Celery worker для фоновых задач:
+
+```powershell
+celery -A config worker -l info --pool=solo
+```
+
+Запустить Celery Beat для периодической проверки due reminders:
+
+```powershell
+celery -A config beat -l info
+```
+
+Локально Redis должен быть доступен по `CELERY_BROKER_URL`, например `redis://localhost:6379/0`. На Windows Redis обычно запускают через Docker или WSL.
+
+Compatibility-команды reminders оставлены для ручной проверки:
+
+```powershell
+python manage.py send_booking_reminders
+python manage.py run_booking_reminder_worker
+```
+
 Запустить тесты:
 
 ```powershell
@@ -210,8 +240,8 @@ python manage.py test --settings=config.settings.test
 
 ```powershell
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Создать `frontend/.env` на основе `frontend/.env.example`:
@@ -223,7 +253,13 @@ VITE_API_URL=http://localhost:8000
 Сборка:
 
 ```powershell
-npm run build
+pnpm build
+```
+
+Если Windows запрещает создание pnpm symlink'ов, можно локально поставить зависимости без изменения lockfile:
+
+```powershell
+pnpm install --frozen-lockfile --config.node-linker=hoisted
 ```
 
 ## Telegram client auth

@@ -463,6 +463,14 @@ button {
   gap: 10px;
 }
 
+.admin-loading {
+  padding: 16px;
+  color: #475467;
+  background: #ffffff;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+}
+
 .admin-table-wrap {
   overflow-x: auto;
 }
@@ -497,6 +505,7 @@ button {
 .admin-row > div {
   display: grid;
   gap: 4px;
+  justify-items: start;
 }
 
 .admin-form,
@@ -551,22 +560,51 @@ button {
   grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) auto auto;
 }
 
-.admin-pill {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid #b8c4d4;
+.admin-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid #d0d5dd;
   border-radius: 999px;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.admin-pill.active {
-  color: #067647;
-  background: #ecfdf3;
+.admin-status-badge.warning {
+  color: #93370d;
+  background: #fffaeb;
+  border-color: #fedf89;
 }
 
-.admin-pill.muted-pill {
-  color: #667085;
-  background: #f2f4f7;
+.admin-status-badge.info {
+  color: #175cd3;
+  background: #eff8ff;
+  border-color: #b2ddff;
+}
+
+.admin-status-badge.progress {
+  color: #6941c6;
+  background: #f4f3ff;
+  border-color: #d9d6fe;
+}
+
+.admin-status-badge.success {
+  color: #067647;
+  background: #ecfdf3;
+  border-color: #abefc6;
+}
+
+.admin-status-badge.danger {
+  color: #b42318;
+  background: #fef3f2;
+  border-color: #fecdca;
+}
+
+.admin-status-badge.neutral {
+  color: #475467;
+  background: #f8fafc;
+  border-color: #d0d5dd;
 }
 
 .admin-check {
