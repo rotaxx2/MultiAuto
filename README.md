@@ -8,6 +8,19 @@ MultiAuto - multi-tenant платформа для записи клиентов
 
 Создать коммерчески ориентированную систему, которую можно развивать после MVP и подключать к нескольким автомойкам.
 
+## Architecture
+
+```text
+Telegram Bot / Telegram Mini App
+  -> Django REST API
+  -> PostgreSQL
+  -> Redis
+  -> Celery Worker / Celery Beat
+  -> Telegram Notifications
+```
+
+Backend отвечает за API, tenant isolation, booking engine, availability, admin endpoints и health checks. Frontend Mini App собирается отдельно через Vite. Redis используется как broker/result backend для Celery reminders.
+
 Основная структура продукта:
 
 ```text
@@ -130,6 +143,8 @@ Copy-Item ..\.env.example ..\.env
 SECRET_KEY=local-development-secret
 DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
+LOG_LEVEL=INFO
+DJANGO_LOG_LEVEL=INFO
 POSTGRES_DB=multiauto
 POSTGRES_USER=multiauto
 POSTGRES_PASSWORD=multiauto
@@ -144,6 +159,11 @@ CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN=60
 CELERY_BOOKING_REMINDER_MAX_RETRIES=3
+CELERY_WORKER_PREFETCH_MULTIPLIER=1
+SECURE_SSL_REDIRECT=False
+SECURE_HSTS_SECONDS=0
+SECURE_HSTS_INCLUDE_SUBDOMAINS=False
+SECURE_HSTS_PRELOAD=False
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
@@ -161,6 +181,8 @@ CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 - `TELEGRAM_DEFAULT_ORGANIZATION_SLUG` - slug организации из таблицы `organizations`, нужен для локального запуска без deep link.
 - `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND` - Redis URL для Celery worker, beat и результатов задач.
 - `CELERY_BOOKING_REMINDER_*` - retry-настройки отправки reminder-уведомлений.
+- `SECURE_*` - production HTTPS/HSTS настройки; локально обычно выключены.
+- `LOG_LEVEL` и `DJANGO_LOG_LEVEL` - уровень логирования приложения и Django.
 - `CORS_ALLOWED_ORIGINS` и `CSRF_TRUSTED_ORIGINS` - frontend origins, которым разрешено обращаться к backend.
 
 `.env.example` хранит только шаблон и безопасные примеры. Реальные пароли, токены и production hosts пишутся в локальный `.env`, который уже исключен в `.gitignore`.
@@ -236,6 +258,17 @@ python manage.py test --settings=config.settings.test
 
 `config.settings.test` использует локальную SQLite-базу только для быстрых model tests, когда PostgreSQL-сервер не поднят. Development и production settings используют PostgreSQL.
 
+## Health checks
+
+Backend предоставляет:
+
+```text
+GET /health/
+GET /health/celery/
+```
+
+`/health/` проверяет Django process, database и Redis. `/health/celery/` проверяет Redis и наличие ответа от Celery worker через inspect ping. Ответы не содержат секретов, connection strings или токенов.
+
 ## Локальный запуск frontend
 
 ```powershell
@@ -261,6 +294,27 @@ pnpm build
 ```powershell
 pnpm install --frozen-lockfile --config.node-linker=hoisted
 ```
+
+## Docker
+
+Compose-стек предназначен для production-like локального запуска:
+
+```powershell
+docker compose build
+docker compose up -d postgres redis
+docker compose run --rm backend python manage.py migrate
+docker compose up -d backend celery_worker celery_beat
+```
+
+Сервисы:
+
+- `backend` - Django API через Gunicorn.
+- `postgres` - PostgreSQL с volume `postgres_data`.
+- `redis` - Redis broker/result backend для Celery.
+- `celery_worker` - обработка background tasks.
+- `celery_beat` - периодический запуск reminder scan.
+
+Для настоящего production deployment задайте реальные `SECRET_KEY`, `POSTGRES_PASSWORD`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, Telegram-переменные и HTTPS/HSTS настройки через environment/secret manager. `.env` не должен попадать в Git или Docker image.
 
 ## Telegram client auth
 
