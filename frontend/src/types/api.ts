@@ -148,6 +148,30 @@ export interface AdminDashboard {
   total_boxes: number;
   bookings_by_status: Record<string, number>;
   upcoming_bookings: Booking[];
+  notifications: {
+    pending: number;
+    sent_today: number;
+    failed_today: number;
+  };
+}
+
+export interface AdminNotification {
+  id: string;
+  booking_id: string;
+  booking_start_at: string;
+  client_name: string;
+  client_telegram_id: number | null;
+  kind: string;
+  scheduled_at: string;
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
+  attempts: number;
+  last_attempt_at: string | null;
+  sent_at: string | null;
+  error_message: string;
+  service_name: string;
+  branch_name: string;
+  car_label: string;
+  created_at: string;
 }
 
 export interface ListResponse<T> {

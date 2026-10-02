@@ -1,7 +1,9 @@
 from datetime import date, datetime, time, timedelta
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import models
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,8 +20,9 @@ from apps.services.models import Service
 from apps.telegram_bot.permissions import IsClient
 from apps.workstations.models import Workstation
 
-from .models import BLOCKING_BOOKING_STATUSES, Booking
-from .serializers import AdminBookingUpdateSerializer, BookingCreateSerializer, BookingSerializer
+from .models import BLOCKING_BOOKING_STATUSES, Booking, BookingReminder, BookingReminderStatus
+from .serializers import AdminBookingReminderSerializer, AdminBookingUpdateSerializer, BookingCreateSerializer, BookingSerializer
+from .services.reminder_service import reset_failed_booking_reminder
 from .services.availability_service import get_allowed_booking_dates, get_available_slots
 from .services.booking_service import cancel_client_booking
 
@@ -125,6 +128,60 @@ class AdminBookingViewSet(ModelViewSet):
         return BookingSerializer
 
 
+class AdminBookingReminderViewSet(ReadOnlyModelViewSet):
+    serializer_class = AdminBookingReminderSerializer
+    permission_classes = [IsAdminOrOwner]
+
+    def get_queryset(self):
+        queryset = (
+            BookingReminder.objects.filter(booking__organization=self.request.user.organization)
+            .select_related("booking__branch", "booking__car", "booking__client", "booking__service")
+            .order_by("-scheduled_at")
+        )
+        status_filter = self.request.query_params.get("status")
+        kind_filter = self.request.query_params.get("kind")
+        date_filter = self.request.query_params.get("date")
+        query = self.request.query_params.get("search")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if kind_filter:
+            queryset = queryset.filter(kind=kind_filter)
+        if date_filter:
+            queryset = queryset.filter(scheduled_at__date=date_filter)
+        if query:
+            search_filter = (
+                models.Q(booking__client__username__icontains=query)
+                | models.Q(booking__client__first_name__icontains=query)
+                | models.Q(booking__client__last_name__icontains=query)
+                | models.Q(booking__car__license_plate__icontains=query)
+                | models.Q(booking__service__name__icontains=query)
+            )
+            try:
+                search_filter |= models.Q(booking_id=UUID(query))
+            except ValueError:
+                pass
+            queryset = queryset.filter(search_filter)
+        return queryset
+
+    @action(detail=True, methods=["post"])
+    def retry(self, request, pk=None):
+        from .tasks import send_booking_reminder_task
+
+        reminder = self.get_object()
+        booking = reminder.booking
+        now = timezone.now()
+        if reminder.status != BookingReminderStatus.FAILED:
+            return Response({"error": {"code": "NOTIFICATION_RETRY_INVALID", "message": "Only failed notifications can be retried.", "details": {}}}, status=400)
+        if reminder.sent_at:
+            return Response({"error": {"code": "NOTIFICATION_ALREADY_SENT", "message": "Notification was already sent.", "details": {}}}, status=400)
+        if booking.status not in BLOCKING_BOOKING_STATUSES or booking.start_at <= now:
+            return Response({"error": {"code": "BOOKING_NOT_ACTIVE", "message": "Booking is no longer active for retry.", "details": {}}}, status=400)
+
+        reset_failed_booking_reminder(reminder)
+        send_booking_reminder_task.delay(str(reminder.id))
+        return Response(AdminBookingReminderSerializer(reminder).data)
+
+
 class AdminDashboardView(APIView):
     permission_classes = [IsAdminOrOwner]
 
@@ -154,6 +211,9 @@ class AdminDashboardView(APIView):
 
         upcoming = org_bookings.filter(start_at__gte=now).select_related("branch", "car", "client", "service", "workstation").order_by("start_at")[:8]
         by_status = org_bookings.values("status").annotate(count=Count("id")).order_by("status")
+        reminders = BookingReminder.objects.filter(booking__organization=organization)
+        sent_today = reminders.filter(sent_at__gte=today_start, sent_at__lt=tomorrow_start).count()
+        failed_today = reminders.filter(status=BookingReminderStatus.FAILED, last_attempt_at__gte=today_start, last_attempt_at__lt=tomorrow_start).count()
         return Response(
             {
                 "today_bookings": today_count,
@@ -165,5 +225,10 @@ class AdminDashboardView(APIView):
                 "total_boxes": total_boxes,
                 "bookings_by_status": {item["status"]: item["count"] for item in by_status},
                 "upcoming_bookings": BookingSerializer(upcoming, many=True).data,
+                "notifications": {
+                    "pending": reminders.filter(status=BookingReminderStatus.PENDING).count(),
+                    "sent_today": sent_today,
+                    "failed_today": failed_today,
+                },
             }
         )

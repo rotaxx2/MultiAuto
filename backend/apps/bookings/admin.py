@@ -14,7 +14,7 @@ class BookingAdmin(admin.ModelAdmin):
 
 @admin.register(BookingReminder)
 class BookingReminderAdmin(admin.ModelAdmin):
-    list_display = ("booking", "kind", "scheduled_at", "sent_at", "created_at")
-    list_filter = ("kind", "sent_at")
+    list_display = ("booking", "kind", "scheduled_at", "status", "attempts", "last_attempt_at", "sent_at", "created_at")
+    list_filter = ("kind", "status", "sent_at")
     search_fields = ("booking__client__username", "booking__car__license_plate")
     autocomplete_fields = ("booking",)

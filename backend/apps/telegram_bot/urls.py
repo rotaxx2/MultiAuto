@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from apps.accounts.views import AdminClientViewSet
 from apps.branches.views import AdminBranchViewSet, ClientBranchServiceViewSet, ClientBranchViewSet
-from apps.bookings.views import AdminBookingViewSet, AdminDashboardView, BookingCreateView, BranchAvailabilityView, BranchAvailableDatesView, MyBookingViewSet
+from apps.bookings.views import AdminBookingReminderViewSet, AdminBookingViewSet, AdminDashboardView, BookingCreateView, BranchAvailabilityView, BranchAvailableDatesView, MyBookingViewSet
 from apps.cars.views import MyCarViewSet
 from apps.schedules.views import AdminBusinessHourViewSet, AdminScheduleExceptionViewSet, ClientBranchScheduleView
 from apps.services.views import AdminServiceViewSet, ClientServiceViewSet
@@ -21,6 +21,7 @@ router.register("admin/workstations", AdminWorkstationViewSet, basename="admin-w
 router.register("admin/business-hours", AdminBusinessHourViewSet, basename="admin-business-hours")
 router.register("admin/schedule-exceptions", AdminScheduleExceptionViewSet, basename="admin-schedule-exceptions")
 router.register("admin/bookings", AdminBookingViewSet, basename="admin-bookings")
+router.register("admin/notifications", AdminBookingReminderViewSet, basename="admin-notifications")
 router.register("admin/clients", AdminClientViewSet, basename="admin-clients")
 
 branch_services = ClientBranchServiceViewSet.as_view({"get": "list"})

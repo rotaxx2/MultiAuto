@@ -70,7 +70,7 @@ export default function App() {
 
 function getAdminPage(pathname: string): AdminPage {
   const segment = pathname.split('/').filter(Boolean)[1];
-  if (segment === 'bookings' || segment === 'clients' || segment === 'services' || segment === 'branches' || segment === 'boxes' || segment === 'schedule') {
+  if (segment === 'bookings' || segment === 'clients' || segment === 'services' || segment === 'branches' || segment === 'boxes' || segment === 'schedule' || segment === 'notifications') {
     return segment;
   }
   return 'dashboard';

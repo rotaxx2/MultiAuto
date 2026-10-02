@@ -67,12 +67,23 @@ class BookingReminderKind(models.TextChoices):
     HOUR_BEFORE = "HOUR_BEFORE", "Hour before"
 
 
+class BookingReminderStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    SENT = "SENT", "Sent"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
 class BookingReminder(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="reminders")
     kind = models.CharField(max_length=20, choices=BookingReminderKind.choices)
     scheduled_at = models.DateTimeField()
+    status = models.CharField(max_length=20, choices=BookingReminderStatus.choices, default=BookingReminderStatus.PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -81,6 +92,7 @@ class BookingReminder(models.Model):
             models.UniqueConstraint(fields=["booking", "kind"], name="booking_reminder_kind_uq"),
         ]
         indexes = [
+            models.Index(fields=["status", "scheduled_at"], name="book_reminder_status_due_idx"),
             models.Index(fields=["scheduled_at", "sent_at"], name="book_reminder_due_idx"),
         ]
 

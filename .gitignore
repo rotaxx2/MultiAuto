@@ -210,6 +210,11 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
 # Ruff stuff:
 .ruff_cache/
 

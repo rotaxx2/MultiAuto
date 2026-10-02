@@ -15,7 +15,7 @@ from apps.services.models import Service
 from apps.workstations.models import Workstation
 
 from ..models import BLOCKING_BOOKING_STATUSES, Booking, BookingStatus
-from ..models import BookingReminder, BookingReminderKind
+from ..models import BookingReminder, BookingReminderKind, BookingReminderStatus
 from .availability_service import is_booking_date_allowed
 
 
@@ -27,6 +27,7 @@ ADMIN_STATUS_TRANSITIONS = {
     BookingStatus.IN_PROGRESS: {BookingStatus.READY},
     BookingStatus.READY: {BookingStatus.COMPLETED},
 }
+FINAL_BOOKING_STATUSES = {BookingStatus.COMPLETED, BookingStatus.CANCELLED, BookingStatus.NO_SHOW}
 
 
 def has_overlap(workstation: Workstation, start_at: datetime, end_at: datetime) -> bool:
@@ -147,11 +148,30 @@ def create_booking_reminders(booking: Booking) -> None:
     now = timezone.now()
     for kind, scheduled_at in reminders:
         if scheduled_at > now:
-            BookingReminder.objects.get_or_create(
+            reminder, _created = BookingReminder.objects.get_or_create(
                 booking=booking,
                 kind=kind,
                 defaults={"scheduled_at": scheduled_at},
             )
+            if reminder.status != BookingReminderStatus.SENT and (
+                reminder.scheduled_at != scheduled_at or reminder.status != BookingReminderStatus.PENDING
+            ):
+                reminder.scheduled_at = scheduled_at
+                reminder.status = BookingReminderStatus.PENDING
+                reminder.error_message = ""
+                reminder.save(update_fields=["scheduled_at", "status", "error_message"])
+
+
+def cancel_pending_booking_reminders(booking: Booking, reason: str) -> None:
+    BookingReminder.objects.filter(booking=booking, sent_at__isnull=True).exclude(status=BookingReminderStatus.SENT).update(
+        status=BookingReminderStatus.CANCELLED,
+        error_message=reason,
+    )
+
+
+def refresh_booking_reminders(booking: Booking) -> None:
+    cancel_pending_booking_reminders(booking, "Booking time changed; reminder was superseded.")
+    create_booking_reminders(booking)
 
 
 def finalize_created_booking(booking_id) -> None:
@@ -172,6 +192,7 @@ def cancel_client_booking(*, booking: Booking, client: User) -> Booking:
         raise ValidationError("Booking cannot be cancelled in current status.")
     locked.status = BookingStatus.CANCELLED
     locked.save(update_fields=["status", "updated_at"])
+    cancel_pending_booking_reminders(locked, "Booking was cancelled.")
     return locked
 
 
@@ -194,6 +215,8 @@ def update_admin_booking_status(*, booking: Booking, status: str | None, admin_c
     if fields:
         fields.append("updated_at")
         locked.save(update_fields=fields)
+        if locked.status in FINAL_BOOKING_STATUSES:
+            cancel_pending_booking_reminders(locked, "Booking reached a final status.")
     return locked
 
 
@@ -229,6 +252,7 @@ def update_admin_booking(
     if not target_workstation.is_active:
         raise ValidationError("Workstation is inactive.")
 
+    original_start_at = locked.start_at
     changing_slot = target_start != locked.start_at or target_workstation.id != locked.workstation_id
     if changing_slot:
         target_end = target_start + timedelta(minutes=locked.service.duration_minutes)
@@ -251,4 +275,8 @@ def update_admin_booking(
         locked.workstation = target_workstation
 
     locked.save(update_fields=["status", "admin_comment", "start_at", "end_at", "workstation", "updated_at"])
+    if locked.status in FINAL_BOOKING_STATUSES:
+        cancel_pending_booking_reminders(locked, "Booking reached a final status.")
+    elif changing_slot and original_start_at != locked.start_at:
+        refresh_booking_reminders(locked)
     return locked

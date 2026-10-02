@@ -18,7 +18,7 @@ from apps.schedules.models import BusinessHour, ScheduleException
 from apps.services.models import Service
 from apps.workstations.models import Workstation
 
-from .models import Booking, BookingReminder, BookingReminderKind, BookingStatus
+from .models import Booking, BookingReminder, BookingReminderKind, BookingReminderStatus, BookingStatus
 
 
 class BookingEngineTests(TestCase):
@@ -243,6 +243,7 @@ class BookingEngineTests(TestCase):
         self.assertEqual(client.get("/api/admin/dashboard/").status_code, 403)
         self.assertEqual(client.get("/api/admin/clients/").status_code, 403)
         self.assertEqual(client.get("/api/admin/bookings/").status_code, 403)
+        self.assertEqual(client.get("/api/admin/notifications/").status_code, 403)
         self.assertEqual(client.post("/api/admin/services/", {"name": "X", "duration_minutes": 30, "price": "1.00"}, format="json").status_code, 403)
         self.assertEqual(client.post("/api/admin/branches/", {"name": "X", "address": "Y", "timezone": "UTC"}, format="json").status_code, 403)
         self.assertEqual(client.post("/api/admin/workstations/", {"branch": str(self.branch.id), "name": "Box 3"}, format="json").status_code, 403)
@@ -252,6 +253,7 @@ class BookingEngineTests(TestCase):
         self.create_booking()
         self.assertEqual(self.auth_client(self.admin).get("/api/admin/dashboard/").status_code, 200)
         self.assertEqual(self.auth_client(self.admin).get("/api/admin/bookings/").status_code, 200)
+        self.assertEqual(self.auth_client(self.admin).get("/api/admin/notifications/").status_code, 200)
         self.assertEqual(self.auth_client(self.admin).get("/api/admin/clients/").status_code, 200)
         self.assertEqual(self.auth_client(self.owner).get("/api/admin/dashboard/").status_code, 200)
         self.assertEqual(self.auth_client(self.owner).get("/api/admin/services/").status_code, 200)
@@ -346,6 +348,41 @@ class BookingEngineTests(TestCase):
         updated = Booking.objects.get(id=booking_id)
         self.assertEqual(updated.workstation, self.ws2)
         self.assertEqual(updated.start_at, self.local_datetime(12).astimezone(datetime_timezone.utc))
+
+    def test_admin_reschedule_refreshes_pending_reminders(self) -> None:
+        booking_id = self.create_booking(start_at=self.local_dt(10)).data["id"]
+        booking = Booking.objects.get(id=booking_id)
+        reminder = BookingReminder.objects.create(
+            booking=booking,
+            kind=BookingReminderKind.HOUR_BEFORE,
+            scheduled_at=booking.start_at - timedelta(hours=1),
+        )
+
+        response = self.auth_client(self.admin).patch(
+            f"/api/admin/bookings/{booking_id}/",
+            {"start_at": self.local_dt(12), "workstation": str(self.ws2.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.status, BookingReminderStatus.PENDING)
+        self.assertEqual(reminder.scheduled_at, self.local_datetime(11).astimezone(datetime_timezone.utc))
+
+    def test_cancelled_booking_marks_pending_reminders_cancelled(self) -> None:
+        booking_id = self.create_booking().data["id"]
+        booking = Booking.objects.get(id=booking_id)
+        reminder = BookingReminder.objects.create(
+            booking=booking,
+            kind=BookingReminderKind.HOUR_BEFORE,
+            scheduled_at=timezone.now() + timedelta(minutes=30),
+        )
+
+        response = self.auth_client(self.client_user).post(f"/api/my-bookings/{booking_id}/cancel/")
+
+        self.assertEqual(response.status_code, 200)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.status, BookingReminderStatus.CANCELLED)
 
     def test_repeat_creation_is_protected_when_all_workstations_blocked(self) -> None:
         self.assertEqual(self.create_booking().status_code, 201)
@@ -445,6 +482,9 @@ class BookingEngineTests(TestCase):
         call_command("send_booking_reminders")
         active_reminder.refresh_from_db()
         self.assertIsNotNone(active_reminder.sent_at)
+        self.assertEqual(active_reminder.status, BookingReminderStatus.SENT)
+        self.assertEqual(active_reminder.attempts, 1)
+        self.assertIsNotNone(active_reminder.last_attempt_at)
         self.assertEqual(BookingReminder.objects.filter(sent_at__isnull=False).count(), 1)
 
         call_command("send_booking_reminders")
@@ -494,6 +534,41 @@ class BookingEngineTests(TestCase):
         self.assertEqual({call[0] for call in calls}, {self.client_user.telegram_id, self.other_admin.telegram_id})
         self.assertTrue(any("Услуга: Wash" in call[1] for call in calls))
         self.assertTrue(any("Услуга: Other" in call[1] for call in calls))
+
+    def test_admin_notification_history_is_tenant_scoped(self) -> None:
+        own_booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        other_booking = Booking.objects.create(
+            organization=self.other_org,
+            branch=self.other_branch,
+            client=self.other_admin,
+            car=Car.objects.create(owner=self.other_admin, brand="Kia", model="Rio", license_plate="O111OO", color="Red"),
+            service=self.other_service,
+            workstation=self.other_ws,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.other_service.price,
+            status=BookingStatus.PENDING,
+        )
+        own_reminder = BookingReminder.objects.create(booking=own_booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now())
+        other_reminder = BookingReminder.objects.create(booking=other_booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now())
+
+        response = self.auth_client(self.admin).get("/api/admin/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["results"]}
+        self.assertIn(str(own_reminder.id), ids)
+        self.assertNotIn(str(other_reminder.id), ids)
 
     def test_reminder_service_skips_wrong_timing(self) -> None:
         from apps.bookings.services.reminder_service import process_due_booking_reminders
@@ -552,6 +627,10 @@ class BookingEngineTests(TestCase):
 
         reminder.refresh_from_db()
         self.assertIsNone(reminder.sent_at)
+        self.assertEqual(reminder.status, BookingReminderStatus.PENDING)
+        self.assertEqual(reminder.attempts, 1)
+        self.assertIsNotNone(reminder.last_attempt_at)
+        self.assertIn("unsuccessful", reminder.error_message)
 
     @patch("apps.bookings.tasks.send_booking_reminder_task")
     def test_process_due_reminders_task_enqueues_due_reminders(self, send_reminder_task) -> None:
@@ -585,8 +664,37 @@ class BookingEngineTests(TestCase):
         from apps.bookings.tasks import send_booking_reminder_task
 
         send_reminder.side_effect = ReminderDeliveryError("temporary")
+        send_booking_reminder_task.request.retries = 0
 
         with mock_patch.object(send_booking_reminder_task, "retry", side_effect=Retry()) as retry:
             with self.assertRaises(Retry):
                 send_booking_reminder_task.run("00000000-0000-0000-0000-000000000000")
         retry.assert_called_once()
+
+    @patch("apps.bookings.tasks.send_booking_reminder")
+    def test_send_reminder_task_marks_failed_after_retry_limit(self, send_reminder) -> None:
+        from apps.bookings.services.reminder_service import ReminderDeliveryError
+        from apps.bookings.tasks import send_booking_reminder_task
+
+        booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        reminder = BookingReminder.objects.create(booking=booking, kind=BookingReminderKind.HOUR_BEFORE, scheduled_at=timezone.now() - timedelta(minutes=1))
+        send_reminder.side_effect = ReminderDeliveryError("temporary")
+
+        send_booking_reminder_task.request.retries = 3
+        result = send_booking_reminder_task.run(str(reminder.id))
+
+        self.assertFalse(result)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.status, BookingReminderStatus.FAILED)
+        self.assertEqual(reminder.error_message, "temporary")

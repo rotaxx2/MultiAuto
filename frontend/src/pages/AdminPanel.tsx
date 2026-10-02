@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Boxes, Building2, CalendarClock, CalendarDays, Gauge, Search, Settings2, UsersRound } from 'lucide-react';
+import { BellRing, Boxes, Building2, CalendarClock, CalendarDays, Gauge, RotateCcw, Search, Settings2, UsersRound } from 'lucide-react';
 
 import { adminApi } from '../api/admin';
-import type { AdminClient, AdminDashboard, Booking, Branch, BusinessHour, ScheduleException, Service, Workstation } from '../types/api';
+import type { AdminClient, AdminDashboard, AdminNotification, Booking, Branch, BusinessHour, ScheduleException, Service, Workstation } from '../types/api';
 
-export type AdminPage = 'dashboard' | 'bookings' | 'clients' | 'services' | 'branches' | 'boxes' | 'schedule';
+export type AdminPage = 'dashboard' | 'bookings' | 'notifications' | 'clients' | 'services' | 'branches' | 'boxes' | 'schedule';
 
 interface AdminPanelProps {
   initialPage?: AdminPage;
@@ -16,6 +16,7 @@ type Notice = { type: 'success' | 'error'; text: string };
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Gauge },
   { id: 'bookings', label: 'Записи', icon: CalendarDays },
+  { id: 'notifications', label: 'Уведомления', icon: BellRing },
   { id: 'clients', label: 'Клиенты', icon: UsersRound },
   { id: 'services', label: 'Услуги', icon: Settings2 },
   { id: 'branches', label: 'Филиалы', icon: Building2 },
@@ -33,6 +34,11 @@ const emptyDashboard: AdminDashboard = {
   total_boxes: 0,
   bookings_by_status: {},
   upcoming_bookings: [],
+  notifications: {
+    pending: 0,
+    sent_today: 0,
+    failed_today: 0,
+  },
 };
 
 const bookingStatuses = ['PENDING', 'CONFIRMED', 'ARRIVED', 'IN_PROGRESS', 'READY', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
@@ -57,6 +63,22 @@ const statusTone: Record<string, string> = {
   COMPLETED: 'neutral',
   CANCELLED: 'danger',
   NO_SHOW: 'danger',
+  SENT: 'success',
+  FAILED: 'danger',
+};
+
+const notificationStatuses = ['PENDING', 'SENT', 'FAILED', 'CANCELLED'];
+
+const notificationStatusLabels: Record<string, string> = {
+  PENDING: 'Ожидает',
+  SENT: 'Отправлено',
+  FAILED: 'Ошибка',
+  CANCELLED: 'Отменено',
+};
+
+const notificationKindLabels: Record<string, string> = {
+  DAY_BEFORE: 'За день',
+  HOUR_BEFORE: 'За час',
 };
 
 const weekdayLabels = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
@@ -79,8 +101,21 @@ function formatStatus(status: string) {
   return statusLabels[status] ?? status;
 }
 
+function formatNotificationStatus(status: string) {
+  return notificationStatusLabels[status] ?? status;
+}
+
+function formatNotificationKind(kind: string) {
+  return notificationKindLabels[kind] ?? kind;
+}
+
 function statusBadgeClass(status: string) {
   return `admin-status-badge ${statusTone[status] ?? 'neutral'}`;
+}
+
+function notificationBadgeClass(status: string) {
+  const tone = status === 'CANCELLED' ? 'neutral' : statusTone[status] ?? 'neutral';
+  return `admin-status-badge ${tone}`;
 }
 
 function toDateInputValue(value: string) {
@@ -120,6 +155,7 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
   const [error, setError] = useState('');
   const [dashboard, setDashboard] = useState<AdminDashboard>(emptyDashboard);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [clients, setClients] = useState<AdminClient[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -133,9 +169,10 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
     setLoading(true);
     setError('');
     try {
-      const [dashboardData, bookingData, clientData, branchData, serviceData, boxData, hourData, exceptionData] = await Promise.all([
+      const [dashboardData, bookingData, notificationData, clientData, branchData, serviceData, boxData, hourData, exceptionData] = await Promise.all([
         adminApi.dashboard(),
         adminApi.bookings(),
+        adminApi.notifications(),
         adminApi.clients(),
         adminApi.branches(),
         adminApi.services(),
@@ -145,6 +182,7 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
       ]);
       setDashboard(dashboardData);
       setBookings(bookingData.results);
+      setNotifications(notificationData.results);
       setClients(clientData.results);
       setBranches(branchData.results);
       setServices(serviceData.results);
@@ -202,6 +240,7 @@ export function AdminPanel({ initialPage = 'dashboard' }: AdminPanelProps) {
         {error ? <p className="inline-error">{error}</p> : null}
         {!loading && !error && page === 'dashboard' ? <DashboardView dashboard={dashboard} branchesCount={branches.length} boxesCount={boxes.length} /> : null}
         {!loading && !error && page === 'bookings' ? <BookingsAdminView bookings={bookings} boxes={boxes} branches={branches} onReload={loadAdminData} /> : null}
+        {!loading && !error && page === 'notifications' ? <NotificationsAdminView notifications={notifications} onReload={loadAdminData} /> : null}
         {!loading && !error && page === 'clients' ? <ClientsAdminView clients={clients} /> : null}
         {!loading && !error && page === 'services' ? <ServicesAdminView services={services} onReload={loadAdminData} /> : null}
         {!loading && !error && page === 'branches' ? <BranchesAdminView branches={branches} onReload={loadAdminData} /> : null}
@@ -226,6 +265,9 @@ function DashboardView({ dashboard, branchesCount, boxesCount }: { dashboard: Ad
     ['Занято', dashboard.occupied_boxes],
     ['Завершено', completed],
     ['Отмены/неявки', cancelled],
+    ['Уведомления ждут', dashboard.notifications.pending],
+    ['Отправлено сегодня', dashboard.notifications.sent_today],
+    ['Ошибки сегодня', dashboard.notifications.failed_today],
   ];
   return (
     <section className="admin-stack">
@@ -414,6 +456,109 @@ function BookingDetailPanel({ booking, boxes, onSave }: { booking: Booking; boxe
         <AdminField label="Комментарий администратора" value={booking.admin_comment || 'Нет комментария'} />
       </div>
     </form>
+  );
+}
+
+function NotificationsAdminView({ notifications, onReload }: { notifications: AdminNotification[]; onReload: () => Promise<void> }) {
+  const [statusFilter, setStatusFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [query, setQuery] = useState('');
+  const [retryingId, setRetryingId] = useState('');
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  const filteredNotifications = notifications.filter((notification) => {
+    const searchable = normalizeText(`${notification.client_name} ${notification.client_telegram_id ?? ''} ${notification.booking_id} ${notification.car_label} ${notification.service_name} ${notification.branch_name}`);
+    const matchesStatus = !statusFilter || notification.status === statusFilter;
+    const matchesKind = !kindFilter || notification.kind === kindFilter;
+    const matchesDate = !dateFilter || toDateInputValue(notification.scheduled_at) === dateFilter;
+    const matchesSearch = !query || searchable.includes(normalizeText(query));
+    return matchesStatus && matchesKind && matchesDate && matchesSearch;
+  });
+
+  async function retry(notification: AdminNotification) {
+    try {
+      setNotice(null);
+      setRetryingId(notification.id);
+      await adminApi.retryNotification(notification.id);
+      setNotice({ type: 'success', text: 'Повторная отправка поставлена в очередь.' });
+      await onReload();
+    } catch (caught) {
+      setNotice({ type: 'error', text: readableError(caught, 'Не удалось повторить отправку.') });
+    } finally {
+      setRetryingId('');
+    }
+  }
+
+  return (
+    <section className="admin-stack">
+      <div className="admin-section-header">
+        <div>
+          <h3 className="section-title">История уведомлений</h3>
+          <p className="muted">Telegram reminders по записям вашей организации.</p>
+        </div>
+        <strong>{filteredNotifications.length} из {notifications.length}</strong>
+      </div>
+      <div className="admin-filter-bar">
+        <label className="admin-search">
+          <Search size={16} aria-hidden="true" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Клиент, booking, авто, услуга" />
+        </label>
+        <input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} />
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="">Все статусы</option>
+          {notificationStatuses.map((status) => <option key={status} value={status}>{formatNotificationStatus(status)}</option>)}
+        </select>
+        <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+          <option value="">Все типы</option>
+          {Object.entries(notificationKindLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
+        </select>
+      </div>
+      {notice ? <p className={notice.type === 'success' ? 'admin-success' : 'inline-error'}>{notice.text}</p> : null}
+      <div className="admin-table-wrap admin-desktop-only">
+        <table className="admin-table">
+          <thead><tr><th>Time</th><th>Client</th><th>Booking</th><th>Type</th><th>Status</th><th>Attempts</th><th>Sent</th><th>Last attempt</th><th>Error</th><th>Action</th></tr></thead>
+          <tbody>
+            {filteredNotifications.map((notification) => (
+              <tr key={notification.id}>
+                <td>{formatDateTime(notification.scheduled_at)}</td>
+                <td>{notification.client_name}</td>
+                <td>#{notification.booking_id.slice(0, 8)}</td>
+                <td>{formatNotificationKind(notification.kind)}</td>
+                <td><span className={notificationBadgeClass(notification.status)}>{formatNotificationStatus(notification.status)}</span></td>
+                <td>{notification.attempts}</td>
+                <td>{notification.sent_at ? formatDateTime(notification.sent_at) : '—'}</td>
+                <td>{notification.last_attempt_at ? formatDateTime(notification.last_attempt_at) : '—'}</td>
+                <td className="admin-error-cell">{notification.error_message || '—'}</td>
+                <td>
+                  <button className="secondary-button compact icon-button" type="button" disabled={notification.status !== 'FAILED' || retryingId === notification.id} onClick={() => void retry(notification)} title="Повторить отправку">
+                    <RotateCcw size={15} aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="admin-mobile-list">
+        {filteredNotifications.map((notification) => (
+          <div className="admin-notification-card" key={notification.id}>
+            <div>
+              <span className={notificationBadgeClass(notification.status)}>{formatNotificationStatus(notification.status)}</span>
+              <strong>{formatDateTime(notification.scheduled_at)}</strong>
+            </div>
+            <span>{notification.client_name} · #{notification.booking_id.slice(0, 8)}</span>
+            <span>{formatNotificationKind(notification.kind)} · {notification.service_name}</span>
+            <span>Попытки: {notification.attempts} · Последняя: {notification.last_attempt_at ? formatDateTime(notification.last_attempt_at) : '—'}</span>
+            {notification.error_message ? <small>{notification.error_message}</small> : null}
+            <button className="secondary-button compact" type="button" disabled={notification.status !== 'FAILED' || retryingId === notification.id} onClick={() => void retry(notification)}>
+              Повторить
+            </button>
+          </div>
+        ))}
+      </div>
+      {!filteredNotifications.length ? <EmptyState text="Уведомления по выбранным фильтрам не найдены." /> : null}
+    </section>
   );
 }
 

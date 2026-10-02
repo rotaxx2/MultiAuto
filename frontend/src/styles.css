@@ -273,6 +273,13 @@ select:focus-visible {
   font-weight: 650;
 }
 
+.secondary-button.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  padding: 0;
+}
+
 .danger-button {
   color: #b42318;
 }
@@ -1050,6 +1057,36 @@ select:focus-visible {
 .admin-booking-card.selected {
   border-color: #84caff;
   box-shadow: 0 0 0 3px #e0f2fe;
+}
+
+.admin-notification-card {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  padding: 14px;
+  color: #182230;
+  background: #ffffff;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+}
+
+.admin-notification-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-notification-card small {
+  max-width: 100%;
+  color: #b42318;
+  overflow-wrap: anywhere;
+}
+
+.admin-error-cell {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
 }
 
 .admin-schedule-grid {

@@ -1,11 +1,13 @@
 import { apiRequest } from './client';
-import type { AdminClient, AdminDashboard, Booking, Branch, BusinessHour, ListResponse, ScheduleException, Service, Workstation } from '../types/api';
+import type { AdminClient, AdminDashboard, AdminNotification, Booking, Branch, BusinessHour, ListResponse, ScheduleException, Service, Workstation } from '../types/api';
 
 export const adminApi = {
   dashboard: () => apiRequest<AdminDashboard>('/api/admin/dashboard/'),
   bookings: () => apiRequest<ListResponse<Booking>>('/api/admin/bookings/'),
   updateBooking: (id: string, payload: Partial<Pick<Booking, 'status' | 'admin_comment' | 'start_at' | 'workstation'>>) =>
     apiRequest<Booking>(`/api/admin/bookings/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  notifications: () => apiRequest<ListResponse<AdminNotification>>('/api/admin/notifications/'),
+  retryNotification: (id: string) => apiRequest<AdminNotification>(`/api/admin/notifications/${id}/retry/`, { method: 'POST' }),
   clients: () => apiRequest<ListResponse<AdminClient>>('/api/admin/clients/'),
   branches: () => apiRequest<ListResponse<Branch>>('/api/admin/branches/'),
   createBranch: (payload: Omit<Branch, 'id'>) => apiRequest<Branch>('/api/admin/branches/', { method: 'POST', body: JSON.stringify(payload) }),

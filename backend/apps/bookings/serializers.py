@@ -8,7 +8,7 @@ from apps.cars.models import Car
 from apps.services.models import Service
 from apps.workstations.models import Workstation
 
-from .models import Booking, BookingStatus
+from .models import Booking, BookingReminder, BookingStatus
 from .services.booking_service import create_booking, update_admin_booking
 
 
@@ -111,3 +111,43 @@ class AdminBookingUpdateSerializer(serializers.ModelSerializer):
             )
         except (DjangoValidationError, ValueError) as exc:
             raise serializers.ValidationError(str(exc)) from exc
+
+
+class AdminBookingReminderSerializer(serializers.ModelSerializer):
+    booking_id = serializers.UUIDField(source="booking.id", read_only=True)
+    booking_start_at = serializers.DateTimeField(source="booking.start_at", read_only=True)
+    client_name = serializers.SerializerMethodField()
+    client_telegram_id = serializers.IntegerField(source="booking.client.telegram_id", read_only=True)
+    service_name = serializers.CharField(source="booking.service.name", read_only=True)
+    branch_name = serializers.CharField(source="booking.branch.name", read_only=True)
+    car_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BookingReminder
+        fields = (
+            "id",
+            "booking_id",
+            "booking_start_at",
+            "client_name",
+            "client_telegram_id",
+            "kind",
+            "scheduled_at",
+            "status",
+            "attempts",
+            "last_attempt_at",
+            "sent_at",
+            "error_message",
+            "service_name",
+            "branch_name",
+            "car_label",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_client_name(self, obj: BookingReminder) -> str:
+        client = obj.booking.client
+        return client.get_full_name() or client.username or str(client.telegram_id or client.id)
+
+    def get_car_label(self, obj: BookingReminder) -> str:
+        car = obj.booking.car
+        return f"{car.brand} {car.model} {car.license_plate}"

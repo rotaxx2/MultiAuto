@@ -19,4 +19,10 @@ frontend/.env.*
 celerybeat-schedule
 celerybeat-schedule.*
 *.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tsbuildinfo
 
