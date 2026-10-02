@@ -301,10 +301,10 @@ Compose-стек предназначен для production-like локальн�
 
 ```powershell
 docker compose build
-docker compose up -d postgres redis
-docker compose run --rm backend python manage.py migrate
-docker compose up -d backend celery_worker celery_beat
+docker compose up -d
 ```
+
+Контейнер `backend` по умолчанию выполняет `python manage.py migrate --noinput` и `python manage.py collectstatic --noinput` перед запуском Gunicorn. Celery worker и Celery Beat запускаются отдельными контейнерами и не выполняют миграции. Если миграции или collectstatic нужно отключить для конкретного deployment flow, задайте `RUN_MIGRATIONS=false` или `RUN_COLLECTSTATIC=false`.
 
 Сервисы:
 
@@ -314,7 +314,7 @@ docker compose up -d backend celery_worker celery_beat
 - `celery_worker` - обработка background tasks.
 - `celery_beat` - периодический запуск reminder scan.
 
-Для настоящего production deployment задайте реальные `SECRET_KEY`, `POSTGRES_PASSWORD`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, Telegram-переменные и HTTPS/HSTS настройки через environment/secret manager. `.env` не должен попадать в Git или Docker image.
+PostgreSQL и Redis доступны контейнерам по service names `postgres` и `redis`; внутри compose не используется `localhost` для межконтейнерных подключений. Для настоящего production deployment задайте реальные `SECRET_KEY`, `POSTGRES_PASSWORD`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, Telegram-переменные и HTTPS/HSTS настройки через environment/secret manager. `.env` не должен попадать в Git или Docker image.
 
 ## Telegram client auth
 

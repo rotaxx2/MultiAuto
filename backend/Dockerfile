@@ -18,7 +18,10 @@ COPY backend/ ./backend/
 
 WORKDIR /app/backend
 
+RUN chmod +x /app/backend/docker-entrypoint.sh
+
 EXPOSE 8000
 
+ENTRYPOINT ["/app/backend/docker-entrypoint.sh"]
 CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
 

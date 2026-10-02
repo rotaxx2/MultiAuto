@@ -7,3 +7,4 @@ aiogram==3.13.1
 django-cors-headers==4.7.0
 celery[redis]==5.4.0
 redis==5.2.1
+whitenoise==6.8.2
