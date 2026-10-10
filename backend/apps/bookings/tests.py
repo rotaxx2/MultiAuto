@@ -496,6 +496,199 @@ class BookingEngineTests(TestCase):
         app.loader.import_default_modules()
         self.assertIn("apps.bookings.tasks.process_due_booking_reminders", app.tasks)
         self.assertIn("apps.bookings.tasks.send_booking_reminder", app.tasks)
+        self.assertIn("apps.bookings.tasks.process_overdue_bookings", app.tasks)
+
+    def test_celery_beat_registers_booking_lifecycle_scan(self) -> None:
+        from django.conf import settings
+
+        self.assertEqual(
+            settings.CELERY_BEAT_SCHEDULE["process-overdue-bookings"]["task"],
+            "apps.bookings.tasks.process_overdue_bookings",
+        )
+
+    def make_direct_booking(self, *, status: str, start_at: datetime, end_at: datetime) -> Booking:
+        return Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=start_at,
+            end_at=end_at,
+            price=self.service.price,
+            status=status,
+        )
+
+    def test_pending_future_booking_is_not_auto_changed(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now + timedelta(minutes=30),
+            end_at=now + timedelta(minutes=90),
+        )
+
+        self.assertEqual(process_overdue_bookings(now=now), 0)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.PENDING)
+
+    def test_pending_overdue_booking_is_marked_no_show(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now - timedelta(hours=2),
+            end_at=now - timedelta(minutes=1),
+        )
+        reminder = BookingReminder.objects.create(
+            booking=booking,
+            kind=BookingReminderKind.HOUR_BEFORE,
+            scheduled_at=now - timedelta(hours=3),
+        )
+
+        self.assertEqual(process_overdue_bookings(now=now), 1)
+        booking.refresh_from_db()
+        reminder.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.NO_SHOW)
+        self.assertEqual(reminder.status, BookingReminderStatus.CANCELLED)
+
+    def test_confirmed_booking_during_service_window_is_not_auto_completed(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.CONFIRMED,
+            start_at=now - timedelta(minutes=15),
+            end_at=now + timedelta(minutes=45),
+        )
+
+        self.assertEqual(process_overdue_bookings(now=now), 0)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.CONFIRMED)
+
+    def test_confirmed_overdue_booking_without_arrival_is_marked_no_show(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.CONFIRMED,
+            start_at=now - timedelta(hours=2),
+            end_at=now - timedelta(minutes=1),
+        )
+
+        self.assertEqual(process_overdue_bookings(now=now), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.NO_SHOW)
+
+    def test_arrived_in_progress_and_ready_are_not_auto_no_show(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        bookings = [
+            self.make_direct_booking(status=status, start_at=now - timedelta(hours=2), end_at=now - timedelta(minutes=1))
+            for status in (BookingStatus.ARRIVED, BookingStatus.IN_PROGRESS, BookingStatus.READY)
+        ]
+
+        self.assertEqual(process_overdue_bookings(now=now), 0)
+        self.assertEqual(
+            list(Booking.objects.filter(id__in=[booking.id for booking in bookings]).order_by("status").values_list("status", flat=True)),
+            sorted([BookingStatus.ARRIVED, BookingStatus.IN_PROGRESS, BookingStatus.READY]),
+        )
+
+    def test_final_booking_statuses_are_not_auto_changed(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        bookings = [
+            self.make_direct_booking(status=status, start_at=now - timedelta(hours=2), end_at=now - timedelta(minutes=1))
+            for status in (BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW)
+        ]
+
+        self.assertEqual(process_overdue_bookings(now=now), 0)
+        self.assertEqual(
+            list(Booking.objects.filter(id__in=[booking.id for booking in bookings]).order_by("status").values_list("status", flat=True)),
+            sorted([BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW]),
+        )
+
+    def test_booking_changed_by_admin_before_lifecycle_update_is_preserved(self) -> None:
+        from apps.bookings.services.lifecycle_service import get_overdue_booking_ids, mark_booking_no_show_if_overdue
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.CONFIRMED,
+            start_at=now - timedelta(hours=2),
+            end_at=now - timedelta(minutes=1),
+        )
+
+        self.assertIn(booking.id, get_overdue_booking_ids(now=now))
+        booking.status = BookingStatus.ARRIVED
+        booking.save(update_fields=["status", "updated_at"])
+
+        self.assertFalse(mark_booking_no_show_if_overdue(booking.id, now=now))
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.ARRIVED)
+
+    def test_lifecycle_scan_is_idempotent(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now - timedelta(hours=2),
+            end_at=now - timedelta(minutes=1),
+        )
+
+        self.assertEqual(process_overdue_bookings(now=now), 1)
+        self.assertEqual(process_overdue_bookings(now=now), 0)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, BookingStatus.NO_SHOW)
+
+    def test_lifecycle_time_boundaries_use_end_at_strictly(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        starts_at_now = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now,
+            end_at=now + timedelta(hours=1),
+        )
+        ends_at_now = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now - timedelta(hours=1),
+            end_at=now,
+        )
+        just_after_end = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now - timedelta(hours=1),
+            end_at=now - timedelta(microseconds=1),
+        )
+
+        self.assertEqual(process_overdue_bookings(now=now), 1)
+        starts_at_now.refresh_from_db()
+        ends_at_now.refresh_from_db()
+        just_after_end.refresh_from_db()
+        self.assertEqual(starts_at_now.status, BookingStatus.PENDING)
+        self.assertEqual(ends_at_now.status, BookingStatus.PENDING)
+        self.assertEqual(just_after_end.status, BookingStatus.NO_SHOW)
+
+    def test_client_api_returns_lifecycle_updated_status(self) -> None:
+        from apps.bookings.services.lifecycle_service import process_overdue_bookings
+
+        now = timezone.now()
+        booking = self.make_direct_booking(
+            status=BookingStatus.PENDING,
+            start_at=now - timedelta(hours=2),
+            end_at=now - timedelta(minutes=1),
+        )
+
+        process_overdue_bookings(now=now)
+        response = self.auth_client(self.client_user).get(f"/api/my-bookings/{booking.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], BookingStatus.NO_SHOW)
 
     def test_reminder_service_sends_correct_booking_and_keeps_tenant_context(self) -> None:
         from apps.bookings.services.reminder_service import process_due_booking_reminders

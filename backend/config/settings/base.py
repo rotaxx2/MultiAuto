@@ -170,6 +170,7 @@ TELEGRAM_MINI_APP_URL = os.getenv("TELEGRAM_MINI_APP_URL", "").strip()
 TELEGRAM_AUTH_MAX_AGE_SECONDS = int(os.getenv("TELEGRAM_AUTH_MAX_AGE_SECONDS", "86400"))
 TELEGRAM_DEFAULT_ORGANIZATION_SLUG = os.getenv("TELEGRAM_DEFAULT_ORGANIZATION_SLUG", "")
 BOOKING_REMINDER_POLL_SECONDS = int(os.getenv("BOOKING_REMINDER_POLL_SECONDS", "300"))
+BOOKING_STATUS_SWEEP_SECONDS = int(os.getenv("BOOKING_STATUS_SWEEP_SECONDS", "300"))
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
@@ -187,6 +188,10 @@ CELERY_BEAT_SCHEDULE = {
     "process-booking-reminders": {
         "task": "apps.bookings.tasks.process_due_booking_reminders",
         "schedule": BOOKING_REMINDER_POLL_SECONDS,
+    },
+    "process-overdue-bookings": {
+        "task": "apps.bookings.tasks.process_overdue_bookings",
+        "schedule": BOOKING_STATUS_SWEEP_SECONDS,
     },
 }
 

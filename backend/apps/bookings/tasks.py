@@ -5,6 +5,7 @@ import logging
 from celery import shared_task
 from django.conf import settings
 
+from .services.lifecycle_service import process_overdue_bookings
 from .services.reminder_service import ReminderDeliveryError, get_due_booking_reminder_ids, mark_booking_reminder_failed, send_booking_reminder
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,13 @@ def process_due_booking_reminders() -> int:
     for reminder_id in reminder_ids:
         send_booking_reminder_task.delay(str(reminder_id))
     return len(reminder_ids)
+
+
+@shared_task(name="apps.bookings.tasks.process_overdue_bookings")
+def process_overdue_booking_statuses() -> int:
+    updated_count = process_overdue_bookings()
+    logger.info("Booking lifecycle scan finished. no_show_count=%s", updated_count)
+    return updated_count
 
 
 @shared_task(bind=True, name="apps.bookings.tasks.send_booking_reminder")
