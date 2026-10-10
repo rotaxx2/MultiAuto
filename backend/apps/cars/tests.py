@@ -207,3 +207,9 @@ class DomainApiTests(TestCase):
         self.assertTrue(schedule.is_closed)
         self.assertIsNone(schedule.opening_time)
         self.assertIsNone(schedule.closing_time)
+
+    def test_client_branch_schedule_rejects_invalid_date(self) -> None:
+        response = self.auth_client(self.client_user).get(f"/api/branches/{self.branch.id}/schedule/?date=not-a-date")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error"]["code"], "INVALID_DATE")

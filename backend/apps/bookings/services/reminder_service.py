@@ -4,7 +4,9 @@ import logging
 from collections.abc import Callable
 from uuid import UUID
 
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.telegram_bot.notifications import send_telegram_message
@@ -32,14 +34,21 @@ def sanitize_error_message(error: object, *, fallback: str = "Delivery failed.")
 
 def get_due_booking_reminder_ids(*, now=None) -> list[UUID]:
     current_time = now or timezone.now()
+    retry_after = current_time - timezone.timedelta(seconds=settings.CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN)
     return list(
         BookingReminder.objects.filter(
             sent_at__isnull=True,
             status=BookingReminderStatus.PENDING,
-            attempts=0,
             scheduled_at__lte=current_time,
             booking__start_at__gt=current_time,
             booking__status__in=BLOCKING_BOOKING_STATUSES,
+        )
+        .filter(
+            Q(attempts=0)
+            | Q(
+                attempts__lt=settings.CELERY_BOOKING_REMINDER_MAX_RETRIES,
+                last_attempt_at__lte=retry_after,
+            )
         )
         .order_by("scheduled_at")
         .values_list("id", flat=True)

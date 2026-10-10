@@ -1,6 +1,8 @@
 from datetime import date
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
@@ -39,7 +41,13 @@ class ClientBranchScheduleView(APIView):
             pk=pk,
         )
         raw_date = request.query_params.get("date")
-        target_date = date.fromisoformat(raw_date) if raw_date else date.today()
+        try:
+            target_date = date.fromisoformat(raw_date) if raw_date else timezone.localdate()
+        except ValueError:
+            return Response(
+                {"error": {"code": "INVALID_DATE", "message": "date must use YYYY-MM-DD format.", "details": {}}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         schedule = get_branch_schedule(branch, target_date)
         return Response(
             {

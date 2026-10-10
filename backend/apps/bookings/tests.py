@@ -632,6 +632,41 @@ class BookingEngineTests(TestCase):
         self.assertIsNotNone(reminder.last_attempt_at)
         self.assertIn("unsuccessful", reminder.error_message)
 
+    def test_due_reminder_scan_recovers_stale_pending_attempts(self) -> None:
+        from apps.bookings.services.reminder_service import get_due_booking_reminder_ids
+
+        booking = Booking.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            client=self.client_user,
+            car=self.car,
+            service=self.service,
+            workstation=self.ws1,
+            start_at=timezone.now() + timedelta(hours=2),
+            end_at=timezone.now() + timedelta(hours=3),
+            price=self.service.price,
+            status=BookingStatus.PENDING,
+        )
+        stale = BookingReminder.objects.create(
+            booking=booking,
+            kind=BookingReminderKind.HOUR_BEFORE,
+            scheduled_at=timezone.now() - timedelta(minutes=10),
+            attempts=1,
+            last_attempt_at=timezone.now() - timedelta(minutes=10),
+        )
+        recent = BookingReminder.objects.create(
+            booking=booking,
+            kind=BookingReminderKind.DAY_BEFORE,
+            scheduled_at=timezone.now() - timedelta(minutes=10),
+            attempts=1,
+            last_attempt_at=timezone.now(),
+        )
+
+        due_ids = set(get_due_booking_reminder_ids())
+
+        self.assertIn(stale.id, due_ids)
+        self.assertNotIn(recent.id, due_ids)
+
     @patch("apps.bookings.tasks.send_booking_reminder_task")
     def test_process_due_reminders_task_enqueues_due_reminders(self, send_reminder_task) -> None:
         from apps.bookings.tasks import process_due_booking_reminders
