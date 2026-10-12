@@ -272,6 +272,49 @@ GET /health/celery/
 
 `/health/` проверяет Django process, database и Redis. `/health/celery/` проверяет Redis и наличие ответа от Celery worker через inspect ping. Ответы не содержат секретов, connection strings или токенов.
 
+## Быстрый запуск на Windows
+
+Основной локальный запуск рассчитан на Docker Desktop и PowerShell. Он поднимает PostgreSQL, Redis, Django backend, Telegram bot polling, Celery Worker, Celery Beat и Vite Mini App одной командой.
+
+Первичная настройка:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+В `.env` обязательно заполните:
+
+```env
+TELEGRAM_BOT_TOKEN=token-from-botfather
+TELEGRAM_BOT_USERNAME=your_bot_username
+TELEGRAM_DEFAULT_ORGANIZATION_SLUG=clean-auto
+```
+
+Для проверки с телефона `start.ps1` автоматически запускает два временных HTTPS-туннеля через контейнер `cloudflare/cloudflared`: один к backend API, второй к Mini App. Поэтому вручную запускать ngrok/cloudflared и прописывать `TELEGRAM_MINI_APP_URL` для обычной локальной проверки не нужно. Нужен доступ Docker к интернету, чтобы скачать образ `cloudflare/cloudflared:latest`.
+
+Запуск:
+
+```powershell
+.\start.ps1
+```
+
+Остановка без удаления данных PostgreSQL/Redis:
+
+```powershell
+.\stop.ps1
+```
+
+Полезные команды диагностики:
+
+```powershell
+docker compose ps
+docker compose logs -f telegram_bot
+docker compose logs -f frontend
+docker compose logs -f backend
+```
+
+`start.ps1` проверяет наличие Docker и `.env`, поднимает Compose-стек, ждет `/health/`, затем безопасно создает или обновляет демо-организацию `clean-auto`. После этого он создает публичные HTTPS URL, перезапускает frontend с публичным backend API URL, перезапускает backend с корректными CORS/CSRF origins и запускает Telegram-бота с актуальным Mini App URL. Он не удаляет volumes и не запускает миграции из Telegram/Celery-сервисов.
+
 ## Локальный запуск frontend
 
 ```powershell
@@ -312,6 +355,8 @@ docker compose up -d
 Сервисы:
 
 - `backend` - Django API через Gunicorn.
+- `frontend` - Vite dev server для Mini App.
+- `telegram_bot` - Telegram Bot polling.
 - `postgres` - PostgreSQL с volume `postgres_data`.
 - `redis` - Redis broker/result backend для Celery.
 - `celery_worker` - обработка background tasks.
@@ -321,17 +366,14 @@ PostgreSQL и Redis доступны контейнерам по service names `
 
 ## Render
 
-В корне есть `render.yaml` для Render Blueprint. Он описывает отдельные сервисы:
+В корне есть `render.yaml` для Render Blueprint. По умолчанию он описывает free-compatible ядро:
 
 - `multiauto-backend` - Django API web service.
 - `multiauto-mini-app` - static Vite Mini App.
-- `multiauto-telegram-bot` - один Background Worker для Telegram polling.
-- `multiauto-celery-worker` - Celery Worker.
-- `multiauto-celery-beat` - один Background Worker для расписания Celery Beat.
 - `multiauto-postgres` - PostgreSQL.
 - `multiauto-redis` - Redis-compatible Render Key Value.
 
-Перед созданием ресурсов проверьте актуальные тарифы Render: PostgreSQL, Key Value и фоновые workers могут оплачиваться отдельно, а production persistence и always-on процессы обычно требуют осознанного выбора плана. Секреты заполняются в Render environment settings, не в `render.yaml`.
+Telegram Bot polling, Celery Worker и Celery Beat для production должны быть отдельными Background Worker сервисами, но они требуют платного worker compute plan на Render. Их нужно создавать только после явного подтверждения расходов. Секреты заполняются в Render environment settings, не в `render.yaml`.
 
 Подробная инструкция: [DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md).
 

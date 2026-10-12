@@ -1,116 +1,167 @@
 # Deploy to Render
 
-This project is prepared for Render with separate services for the Django API, Telegram polling bot, Celery worker, Celery beat, PostgreSQL, Redis-compatible Key Value, and the static Telegram Mini App.
+This document describes the supported Render deployment path for MultiAuto.
 
-Do not put real tokens, passwords, or production URLs into Git. Fill them in Render environment settings when creating the Blueprint.
+Do not commit real tokens, passwords, private keys, or production URLs. Fill secrets in the Render dashboard.
 
 ## Cost checkpoint
 
-Before creating resources, open Render pricing and confirm the current limits for your account. As of 2026-10-12, Render documents Blueprints, web services, background workers, Postgres, and Key Value services separately. Free instances are available for web services, static sites, Postgres, and Key Value, but Background Workers do not support the Free instance type. The worker services in `render.yaml` use the smallest current worker compute plan (`0.5c-512mb`) and should not be created unless the owner explicitly accepts the cost.
+As of 2026-10-12, Render free instances are available for web services, static sites, Render Postgres, and Render Key Value. Background Workers do not support the Free instance type. That means a fully working production deployment with Telegram polling, Celery Worker, and Celery Beat requires paid worker services, or an owner-approved alternative outside Render.
 
-Recommended production posture:
+The checked-in `render.yaml` intentionally creates only the free-compatible core:
 
-- PostgreSQL must be a managed Render Postgres database or another persistent external PostgreSQL database.
-- Celery broker/result backend should use Render Key Value or another Redis-compatible managed service.
-- Telegram bot polling should run as exactly one Background Worker.
-- Celery beat should run as exactly one Background Worker.
-- Do not rely on container local files for durable data.
+- `multiauto-backend` - Django API web service, Docker runtime.
+- `multiauto-mini-app` - static Vite Mini App.
+- `multiauto-postgres` - Render Postgres.
+- `multiauto-redis` - Render Key Value for Celery/Redis-compatible broker.
 
-## Blueprint services
+Do not create paid worker services until the project owner explicitly approves the cost.
 
-`render.yaml` defines:
+## Why workers are not in render.yaml
 
-- `multiauto-backend` - Django API web service, Docker runtime, `/health/` health check.
-- `multiauto-mini-app` - static Vite build for the Telegram Mini App.
-- `multiauto-telegram-bot` - Telegram polling background worker.
-- `multiauto-celery-worker` - Celery task worker.
-- `multiauto-celery-beat` - single scheduler for reminders and booking status sweeps.
-- `multiauto-postgres` - persistent PostgreSQL database.
-- `multiauto-redis` - Redis-compatible Render Key Value service.
+MultiAuto needs three continuous non-HTTP processes for full production behavior:
 
-Docker services use `dockerCommand`, not `startCommand`, because Render rejects `startCommand` for `runtime: docker`. The backend web service is the only service with `RUN_MIGRATIONS=true`, so Django migrations run in `backend/docker-entrypoint.sh` before Gunicorn starts serving requests. Telegram bot, Celery worker, and Celery beat all set `RUN_MIGRATIONS=false` and `RUN_COLLECTSTATIC=false`.
+- Telegram bot polling: `python manage.py run_telegram_bot`
+- Celery Worker: `celery -A config worker -l info`
+- Celery Beat: `celery -A config beat -l info --pidfile=`
 
-On the free backend plan, Render does not support `preDeployCommand`. If you upgrade `multiauto-backend` to a paid compute plan, the cleaner production option is to move migrations from the entrypoint flow to:
+Render Background Workers are the right service type for these commands, but they are not available on the free instance type. Putting them in `render.yaml` with a paid plan would create billable services during Blueprint apply, so the active Blueprint does not include them.
+
+## Blueprint behavior
+
+Docker services use `dockerCommand`, not `startCommand`, because Render rejects `startCommand` for `runtime: docker`.
+
+The backend uses:
+
+```yaml
+dockerCommand: /bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3"
+```
+
+On the free backend plan, Render does not support `preDeployCommand`. The current free-plan fallback is:
+
+```yaml
+RUN_MIGRATIONS=true
+RUN_COLLECTSTATIC=true
+```
+
+The backend Docker entrypoint runs:
+
+```bash
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+```
+
+before starting Gunicorn. This avoids running migrations in Telegram/Celery processes and keeps database data intact. The tradeoff is that this is not as clean as Render's paid `preDeployCommand` because it runs inside the web service startup path.
+
+If the backend is upgraded to a paid compute plan, prefer:
 
 ```yaml
 preDeployCommand: python manage.py migrate --noinput
+RUN_MIGRATIONS=false
 ```
 
-and set `RUN_MIGRATIONS=false` for the backend.
+## Required Blueprint variables
 
-## Create the Blueprint
-
-1. Push the repository to GitHub.
-2. In Render, choose **New** -> **Blueprint**.
-3. Connect the GitHub repository and select the branch.
-4. Review every service and datastore before applying. Do not accept paid worker resources unless you intentionally approve the cost.
-5. Fill all variables marked `sync: false`.
-
-## Required environment variables
-
-Set these in Render when prompted:
+Set these when Render prompts for variables marked `sync: false`:
 
 - `ALLOWED_HOSTS`: backend host, for example `multiauto-backend.onrender.com`.
 - `CORS_ALLOWED_ORIGINS`: frontend HTTPS origin, for example `https://multiauto-mini-app.onrender.com`.
 - `CSRF_TRUSTED_ORIGINS`: same HTTPS frontend origin.
-- `TELEGRAM_BOT_TOKEN`: token from BotFather.
-- `TELEGRAM_BOT_USERNAME`: bot username without secrets.
+- `TELEGRAM_BOT_TOKEN`: BotFather token. Required by worker services and notification tasks.
+- `TELEGRAM_BOT_USERNAME`: bot username.
 - `TELEGRAM_MINI_APP_URL`: frontend HTTPS URL opened from Telegram.
-- `TELEGRAM_DEFAULT_ORGANIZATION_SLUG`: existing organization slug, for example `clean-auto`.
+- `TELEGRAM_DEFAULT_ORGANIZATION_SLUG`: active organization slug, for example `clean-auto`.
 - `VITE_API_URL`: backend HTTPS origin, for example `https://multiauto-backend.onrender.com`.
 
-`SECRET_KEY` is generated by Render. `DATABASE_URL`, `CELERY_BROKER_URL`, and `CELERY_RESULT_BACKEND` are wired from managed Render resources.
+Render generates `SECRET_KEY`. `DATABASE_URL`, `CELERY_BROKER_URL`, and `CELERY_RESULT_BACKEND` are wired from Render Postgres and Render Key Value.
 
-`VITE_API_URL` is a build-time Vite variable. If you change the backend URL, redeploy the Mini App static site so the frontend bundle is rebuilt with the new HTTPS API origin.
+`VITE_API_URL` is a build-time Vite variable. If the backend URL changes, redeploy the static Mini App so the bundle is rebuilt.
 
-## After first deploy
+## Paid worker services after approval
 
-1. Confirm backend health:
+After the owner approves paid Background Workers, create exactly these services manually or add them to `render.yaml` in a separate approved change.
+
+Use the same repository, branch, Dockerfile path, and context for all three:
+
+- Runtime: Docker
+- Dockerfile path: `./backend/Dockerfile`
+- Docker context: `.`
+- Environment:
+  - `DJANGO_SETTINGS_MODULE=config.settings.production`
+  - `SECRET_KEY`: same value as backend
+  - `DEBUG=False`
+  - `ALLOWED_HOSTS`: same value as backend
+  - `DATABASE_URL`: same Render Postgres connection string
+  - `CELERY_BROKER_URL`: same Render Key Value connection string
+  - `CELERY_RESULT_BACKEND`: same Render Key Value connection string
+  - `RUN_MIGRATIONS=false`
+  - `RUN_COLLECTSTATIC=false`
+
+Telegram bot worker:
+
+- Service type: Background Worker
+- Instances: exactly 1
+- Docker command: `python manage.py run_telegram_bot`
+- Additional variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_MINI_APP_URL`, `TELEGRAM_DEFAULT_ORGANIZATION_SLUG`
+
+Celery Worker:
+
+- Service type: Background Worker
+- Docker command: `celery -A config worker -l info`
+- Additional variables: `TELEGRAM_BOT_TOKEN`, `CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN`, `CELERY_BOOKING_REMINDER_MAX_RETRIES`, `CELERY_WORKER_PREFETCH_MULTIPLIER`
+
+Celery Beat:
+
+- Service type: Background Worker
+- Instances: exactly 1
+- Docker command: `celery -A config beat -l info --pidfile=`
+- Additional variables: `BOOKING_REMINDER_POLL_SECONDS`, `BOOKING_STATUS_SWEEP_SECONDS`
+
+Do not scale Telegram polling or Celery Beat above one instance.
+
+## Deployment order
+
+1. Apply the Blueprint for Postgres, Key Value, backend, and static Mini App.
+2. Fill all required environment variables.
+3. Deploy backend and confirm logs show migrations completed before Gunicorn starts.
+4. Deploy Mini App after `VITE_API_URL` points to the backend HTTPS origin.
+5. Check backend health:
 
    ```powershell
    Invoke-WebRequest https://YOUR_BACKEND_HOST/health/
    ```
 
-2. Confirm the Mini App opens:
+6. Check Mini App shell:
 
    ```powershell
    Invoke-WebRequest https://YOUR_FRONTEND_HOST/
    ```
 
-3. Confirm the backend deploy log shows migrations completed before Gunicorn started. On the current free-plan Blueprint this happens through `RUN_MIGRATIONS=true` in the backend container entrypoint.
+7. Only after paid worker approval, create Telegram bot, Celery Worker, and Celery Beat services.
+8. In BotFather, set the Mini App URL to the Render static site URL.
+9. Send `/start org_<slug>` to the bot and test Telegram Mini App auth, booking creation, cancellation, and reminders.
 
-4. Create the first admin manually from the backend shell if needed:
+## Manual data/setup commands
 
-   ```bash
-   python manage.py createsuperuser
-   ```
+Do not run `createsuperuser` automatically. If needed, run it manually from a backend shell on a paid plan or another controlled environment:
 
-5. Seed demo data only for test environments:
+```bash
+python manage.py createsuperuser
+```
 
-   ```bash
-   python manage.py seed_demo_data
-   ```
+Use demo seed data only for test/staging:
 
-6. In BotFather, set the Mini App URL to `TELEGRAM_MINI_APP_URL`.
-7. Send `/start` to the bot and open the Mini App from the bot button.
-8. Verify Telegram `initData` auth, profile loading, booking creation/cancellation, admin API permissions, and reminder delivery.
-9. Check logs for all worker services. There must be one Telegram polling service and one Celery beat service.
-
-## Updating production
-
-1. Commit and push changes to the connected branch.
-2. Let Render deploy the changed services.
-3. Watch the backend deploy log for migration success.
-4. Check `/health/`.
-5. Check worker logs for Celery and Telegram startup.
-6. Re-test Mini App auth and at least one booking flow.
+```bash
+python manage.py seed_demo_data --slug clean-auto
+```
 
 ## Troubleshooting
 
+- Blueprint rejects Docker command: check that Docker services use `dockerCommand`, not `startCommand`.
+- Blueprint rejects pre-deploy command: free compute does not support `preDeployCommand`; use backend entrypoint migration or upgrade backend to paid and add `preDeployCommand`.
 - `DisallowedHost`: add the backend host to `ALLOWED_HOSTS`.
-- CORS or CSRF errors: check exact `https://` origins in `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`.
-- Mini App calls localhost: set `VITE_API_URL` in the static site and redeploy it.
-- Bot does not answer: verify `TELEGRAM_BOT_TOKEN`, keep only one polling worker, and inspect `multiauto-telegram-bot` logs.
-- Reminders are not sent: verify Redis/Key Value connection, `multiauto-celery-worker`, `multiauto-celery-beat`, and `TELEGRAM_BOT_TOKEN`.
-- Migrations fail: inspect `multiauto-backend` deploy logs and database connectivity. The free-plan Blueprint runs migrations from the backend entrypoint, not `preDeployCommand`.
-- Data disappears after restart: confirm production uses `DATABASE_URL` from Render Postgres, not SQLite or local container storage.
+- CORS/CSRF errors: check exact `https://` origins in `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`.
+- Mini App calls localhost: set `VITE_API_URL` on the static site and redeploy it.
+- Bot does not answer: verify the paid Telegram Background Worker exists, has one instance, and has `TELEGRAM_BOT_TOKEN`.
+- Reminders are not sent: verify paid Celery Worker and Celery Beat exist, and Redis/Key Value URLs are set.
+- Data disappears: confirm production uses Render Postgres via `DATABASE_URL`, not SQLite or container local files.
