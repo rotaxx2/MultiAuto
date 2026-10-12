@@ -18,6 +18,7 @@ COPY backend/ ./backend/
 
 WORKDIR /app/backend
 
+RUN mkdir -p /app/backend/staticfiles
 RUN chmod +x /app/backend/docker-entrypoint.sh /app/backend/start-web.sh
 
 EXPOSE 8000

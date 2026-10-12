@@ -5,8 +5,6 @@ import logging
 from asgiref.sync import async_to_sync
 from django.conf import settings
 
-from .bot import create_bot
-
 logger = logging.getLogger(__name__)
 
 
@@ -15,6 +13,8 @@ def send_telegram_message(telegram_id: int | None, text: str) -> bool:
         return False
 
     async def _send() -> None:
+        from .bot import create_bot
+
         bot = create_bot()
         try:
             await bot.send_message(chat_id=telegram_id, text=text)
