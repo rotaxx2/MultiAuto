@@ -1,0 +1,277 @@
+databases:
+  - name: multiauto-postgres
+    databaseName: multiauto
+    user: multiauto
+    plan: free
+
+services:
+  - name: multiauto-redis
+    type: keyvalue
+    plan: free
+    ipAllowList: []
+
+  - name: multiauto-backend
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health/
+    preDeployCommand: python manage.py migrate --noinput
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: multiauto-postgres
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: multiauto-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: keyvalue
+          name: multiauto-redis
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_MINI_APP_URL
+        sync: false
+      - key: TELEGRAM_DEFAULT_ORGANIZATION_SLUG
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: SECURE_SSL_REDIRECT
+        value: "True"
+      - key: SECURE_HSTS_SECONDS
+        value: "31536000"
+      - key: SECURE_HSTS_INCLUDE_SUBDOMAINS
+        value: "True"
+      - key: SECURE_HSTS_PRELOAD
+        value: "True"
+      - key: RUN_MIGRATIONS
+        value: "false"
+      - key: RUN_COLLECTSTATIC
+        value: "true"
+      - key: CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN
+        value: "60"
+      - key: CELERY_BOOKING_REMINDER_MAX_RETRIES
+        value: "3"
+      - key: CELERY_WORKER_PREFETCH_MULTIPLIER
+        value: "1"
+      - key: BOOKING_REMINDER_POLL_SECONDS
+        value: "300"
+      - key: BOOKING_STATUS_SWEEP_SECONDS
+        value: "300"
+
+  - name: multiauto-telegram-bot
+    type: worker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    startCommand: python manage.py run_telegram_bot
+    numInstances: 1
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DJANGO_SETTINGS_MODULE
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: SECRET_KEY
+      - key: DEBUG
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DEBUG
+      - key: ALLOWED_HOSTS
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: ALLOWED_HOSTS
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DATABASE_URL
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_BROKER_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_RESULT_BACKEND
+      - key: TELEGRAM_BOT_TOKEN
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_BOT_USERNAME
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: TELEGRAM_BOT_USERNAME
+      - key: TELEGRAM_MINI_APP_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: TELEGRAM_MINI_APP_URL
+      - key: TELEGRAM_DEFAULT_ORGANIZATION_SLUG
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: TELEGRAM_DEFAULT_ORGANIZATION_SLUG
+
+  - name: multiauto-celery-worker
+    type: worker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    startCommand: celery -A config worker -l info
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DJANGO_SETTINGS_MODULE
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: SECRET_KEY
+      - key: DEBUG
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DEBUG
+      - key: ALLOWED_HOSTS
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: ALLOWED_HOSTS
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DATABASE_URL
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_BROKER_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_RESULT_BACKEND
+      - key: TELEGRAM_BOT_TOKEN
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: TELEGRAM_BOT_TOKEN
+      - key: CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN
+      - key: CELERY_BOOKING_REMINDER_MAX_RETRIES
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_BOOKING_REMINDER_MAX_RETRIES
+      - key: CELERY_WORKER_PREFETCH_MULTIPLIER
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_WORKER_PREFETCH_MULTIPLIER
+
+  - name: multiauto-celery-beat
+    type: worker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    startCommand: celery -A config beat -l info --pidfile=
+    numInstances: 1
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DJANGO_SETTINGS_MODULE
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: SECRET_KEY
+      - key: DEBUG
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DEBUG
+      - key: ALLOWED_HOSTS
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: ALLOWED_HOSTS
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: DATABASE_URL
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_BROKER_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: CELERY_RESULT_BACKEND
+      - key: BOOKING_REMINDER_POLL_SECONDS
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: BOOKING_REMINDER_POLL_SECONDS
+      - key: BOOKING_STATUS_SWEEP_SECONDS
+        fromService:
+          type: web
+          name: multiauto-backend
+          envVarKey: BOOKING_STATUS_SWEEP_SECONDS
+
+  - name: multiauto-mini-app
+    type: web
+    runtime: static
+    plan: free
+    buildCommand: cd frontend && corepack enable && pnpm install --frozen-lockfile && pnpm build
+    staticPublishPath: ./frontend/dist
+    pullRequestPreviewsEnabled: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false

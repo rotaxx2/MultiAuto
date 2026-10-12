@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { cancelBooking, getMyBookings } from '../api/profile';
 import { StateView } from '../components/StateView';
@@ -11,29 +11,43 @@ export function BookingsPage() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
-    getMyBookings()
+  const loadBookings = useCallback((showLoading = false) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+    return getMyBookings()
       .then((response) => {
-        if (mounted) {
-          setBookings(response.results);
-        }
+        setError('');
+        setBookings(response.results);
       })
       .catch((caught: unknown) => {
-        if (mounted) {
-          setError(humanizeError(caught, 'Не удалось загрузить записи. Попробуйте еще раз.'));
-        }
+        setError(humanizeError(caught, 'Не удалось загрузить записи. Попробуйте еще раз.'));
       })
       .finally(() => {
-        if (mounted) {
+        if (showLoading) {
           setLoading(false);
         }
       });
-
-    return () => {
-      mounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    void loadBookings(true);
+  }, [loadBookings]);
+
+  useEffect(() => {
+    const refreshVisibleBookings = () => {
+      if (document.visibilityState === 'visible') {
+        void loadBookings();
+      }
+    };
+
+    document.addEventListener('visibilitychange', refreshVisibleBookings);
+    window.addEventListener('focus', refreshVisibleBookings);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshVisibleBookings);
+      window.removeEventListener('focus', refreshVisibleBookings);
+    };
+  }, [loadBookings]);
 
   const cancel = async (id: string) => {
     const confirmed = window.confirm('Вы уверены, что хотите отменить запись?');

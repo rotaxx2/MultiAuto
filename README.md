@@ -58,6 +58,7 @@ Organization
 - [09_ADMIN_FLOW.md](docs/09_ADMIN_FLOW.md) - путь администратора и владельца.
 - [10_SECURITY.md](docs/10_SECURITY.md) - authentication, authorization, RBAC, tenant isolation и API security.
 - [11_ROADMAP.md](docs/11_ROADMAP.md) - этапы разработки после архитектурной фазы.
+- [DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) - подготовка и проверка деплоя на Render.
 
 ## Текущий стек
 
@@ -155,6 +156,7 @@ TELEGRAM_BOT_USERNAME=your_bot_username
 TELEGRAM_MINI_APP_URL=http://localhost:5173
 TELEGRAM_DEFAULT_ORGANIZATION_SLUG=clean-auto
 BOOKING_REMINDER_POLL_SECONDS=300
+BOOKING_STATUS_SWEEP_SECONDS=300
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN=60
@@ -180,6 +182,7 @@ CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 - `TELEGRAM_MINI_APP_URL` - URL Vite dev server локально или HTTPS URL production Mini App.
 - `TELEGRAM_DEFAULT_ORGANIZATION_SLUG` - slug организации из таблицы `organizations`, нужен для локального запуска без deep link.
 - `CELERY_BROKER_URL` и `CELERY_RESULT_BACKEND` - Redis URL для Celery worker, beat и результатов задач.
+- `BOOKING_STATUS_SWEEP_SECONDS` - интервал Celery Beat для автоматического перевода просроченных `PENDING`/`CONFIRMED` записей в `NO_SHOW`.
 - `CELERY_BOOKING_REMINDER_*` - retry-настройки отправки reminder-уведомлений.
 - `SECURE_*` - production HTTPS/HSTS настройки; локально обычно выключены.
 - `LOG_LEVEL` и `DJANGO_LOG_LEVEL` - уровень логирования приложения и Django.
@@ -315,6 +318,22 @@ docker compose up -d
 - `celery_beat` - периодический запуск reminder scan.
 
 PostgreSQL и Redis доступны контейнерам по service names `postgres` и `redis`; внутри compose не используется `localhost` для межконтейнерных подключений. Для настоящего production deployment задайте реальные `SECRET_KEY`, `POSTGRES_PASSWORD`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, Telegram-переменные и HTTPS/HSTS настройки через environment/secret manager. `.env` не должен попадать в Git или Docker image.
+
+## Render
+
+В корне есть `render.yaml` для Render Blueprint. Он описывает отдельные сервисы:
+
+- `multiauto-backend` - Django API web service.
+- `multiauto-mini-app` - static Vite Mini App.
+- `multiauto-telegram-bot` - один Background Worker для Telegram polling.
+- `multiauto-celery-worker` - Celery Worker.
+- `multiauto-celery-beat` - один Background Worker для расписания Celery Beat.
+- `multiauto-postgres` - PostgreSQL.
+- `multiauto-redis` - Redis-compatible Render Key Value.
+
+Перед созданием ресурсов проверьте актуальные тарифы Render: PostgreSQL, Key Value и фоновые workers могут оплачиваться отдельно, а production persistence и always-on процессы обычно требуют осознанного выбора плана. Секреты заполняются в Render environment settings, не в `render.yaml`.
+
+Подробная инструкция: [DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md).
 
 ## Telegram client auth
 

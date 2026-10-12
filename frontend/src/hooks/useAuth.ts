@@ -21,21 +21,33 @@ export function useAuth(initData: string, startParam: string, isTelegram: boolea
         return;
       }
 
+      const authenticateFromTelegram = async () => {
+        if (!isTelegram || !initData) {
+          setStatus('unauthorized');
+          setError('Откройте приложение внутри Telegram.');
+          return;
+        }
+
+        setUser(await authenticateWithTelegram(initData, startParam));
+        setStatus('authenticated');
+      };
+
       const token = getStoredToken();
       if (token) {
-        setUser(await getMyProfile());
-        setStatus('authenticated');
+        try {
+          setUser(await getMyProfile());
+          setStatus('authenticated');
+        } catch (caught) {
+          if (caught instanceof ApiError && caught.status === 401) {
+            await authenticateFromTelegram();
+            return;
+          }
+          throw caught;
+        }
         return;
       }
 
-      if (!isTelegram || !initData) {
-        setStatus('unauthorized');
-        setError('Откройте приложение внутри Telegram.');
-        return;
-      }
-
-      setUser(await authenticateWithTelegram(initData, startParam));
-      setStatus('authenticated');
+      await authenticateFromTelegram();
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
         setStatus('unauthorized');
