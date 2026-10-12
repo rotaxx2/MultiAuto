@@ -17,7 +17,6 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     healthCheckPath: /health/
-    dockerCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers $WEB_CONCURRENCY
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production

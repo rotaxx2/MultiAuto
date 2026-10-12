@@ -29,13 +29,16 @@ Render Background Workers are the right service type for these commands, but the
 
 ## Blueprint behavior
 
-Docker services use `dockerCommand`, not `startCommand`, because Render rejects `startCommand` for `runtime: docker`.
+The backend Docker service does not set `dockerCommand` in the Blueprint. Render uses the Docker image `CMD`, which points to `backend/start-web.sh`.
 
-The backend uses:
+The backend Dockerfile uses:
 
-```yaml
-dockerCommand: /bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3"
+```dockerfile
+ENTRYPOINT ["/app/backend/docker-entrypoint.sh"]
+CMD ["/app/backend/start-web.sh"]
 ```
+
+`backend/docker-entrypoint.sh` runs migrations and collectstatic first. `backend/start-web.sh` then validates `PORT` and `WEB_CONCURRENCY` and starts Gunicorn.
 
 On the free backend plan, Render does not support `preDeployCommand`. The current free-plan fallback is:
 
@@ -157,7 +160,7 @@ python manage.py seed_demo_data --slug clean-auto
 
 ## Troubleshooting
 
-- Blueprint rejects Docker command: check that Docker services use `dockerCommand`, not `startCommand`.
+- Backend still starts an old Gunicorn command: clear any manual Docker Command override in the Render service settings and sync the Blueprint again. The checked-in Blueprint intentionally omits `dockerCommand` for the backend.
 - Blueprint rejects pre-deploy command: free compute does not support `preDeployCommand`; use backend entrypoint migration or upgrade backend to paid and add `preDeployCommand`.
 - `DisallowedHost`: add the backend host to `ALLOWED_HOSTS`.
 - CORS/CSRF errors: check exact `https://` origins in `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`.

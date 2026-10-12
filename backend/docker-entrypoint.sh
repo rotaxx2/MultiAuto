@@ -1,10 +1,6 @@
 #!/bin/sh
 set -e
 
-PORT="${PORT:-8000}"
-WEB_CONCURRENCY="${WEB_CONCURRENCY:-2}"
-export PORT WEB_CONCURRENCY
-
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   python manage.py migrate --noinput
 fi

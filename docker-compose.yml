@@ -19,6 +19,7 @@ x-backend-env: &backend-env
   CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN: ${CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN:-60}
   CELERY_BOOKING_REMINDER_MAX_RETRIES: ${CELERY_BOOKING_REMINDER_MAX_RETRIES:-3}
   CELERY_WORKER_PREFETCH_MULTIPLIER: ${CELERY_WORKER_PREFETCH_MULTIPLIER:-1}
+  WEB_CONCURRENCY: ${WEB_CONCURRENCY:-3}
 
 x-frontend-env: &frontend-env
   VITE_API_URL: ${VITE_API_URL:-}
@@ -29,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3}
+    command: /app/backend/start-web.sh
     environment:
       <<: *backend-env
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
