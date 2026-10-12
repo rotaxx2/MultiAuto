@@ -17,8 +17,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     healthCheckPath: /health/
-    preDeployCommand: python manage.py migrate --noinput
-    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+    dockerCommand: /bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3"
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
@@ -63,7 +62,7 @@ services:
       - key: SECURE_HSTS_PRELOAD
         value: "True"
       - key: RUN_MIGRATIONS
-        value: "false"
+        value: "true"
       - key: RUN_COLLECTSTATIC
         value: "true"
       - key: CELERY_BOOKING_REMINDER_RETRY_COUNTDOWN
@@ -80,10 +79,10 @@ services:
   - name: multiauto-telegram-bot
     type: worker
     runtime: docker
-    plan: free
+    plan: 0.5c-512mb
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
-    startCommand: python manage.py run_telegram_bot
+    dockerCommand: python manage.py run_telegram_bot
     numInstances: 1
     envVars:
       - key: DJANGO_SETTINGS_MODULE
@@ -141,14 +140,18 @@ services:
           type: web
           name: multiauto-backend
           envVarKey: TELEGRAM_DEFAULT_ORGANIZATION_SLUG
+      - key: RUN_MIGRATIONS
+        value: "false"
+      - key: RUN_COLLECTSTATIC
+        value: "false"
 
   - name: multiauto-celery-worker
     type: worker
     runtime: docker
-    plan: free
+    plan: 0.5c-512mb
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
-    startCommand: celery -A config worker -l info
+    dockerCommand: celery -A config worker -l info
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         fromService:
@@ -205,14 +208,18 @@ services:
           type: web
           name: multiauto-backend
           envVarKey: CELERY_WORKER_PREFETCH_MULTIPLIER
+      - key: RUN_MIGRATIONS
+        value: "false"
+      - key: RUN_COLLECTSTATIC
+        value: "false"
 
   - name: multiauto-celery-beat
     type: worker
     runtime: docker
-    plan: free
+    plan: 0.5c-512mb
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
-    startCommand: celery -A config beat -l info --pidfile=
+    dockerCommand: celery -A config beat -l info --pidfile=
     numInstances: 1
     envVars:
       - key: DJANGO_SETTINGS_MODULE
@@ -260,11 +267,14 @@ services:
           type: web
           name: multiauto-backend
           envVarKey: BOOKING_STATUS_SWEEP_SECONDS
+      - key: RUN_MIGRATIONS
+        value: "false"
+      - key: RUN_COLLECTSTATIC
+        value: "false"
 
   - name: multiauto-mini-app
     type: web
     runtime: static
-    plan: free
     buildCommand: cd frontend && corepack enable && pnpm install --frozen-lockfile && pnpm build
     staticPublishPath: ./frontend/dist
     pullRequestPreviewsEnabled: false
