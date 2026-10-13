@@ -28,6 +28,12 @@ def get_mini_app_url() -> str:
     return mini_app_url
 
 
+def validate_bot_settings() -> None:
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
+    get_mini_app_url()
+
+
 def build_mini_app_keyboard() -> InlineKeyboardBuilder:
     mini_app_url = get_mini_app_url()
     builder = InlineKeyboardBuilder()
@@ -56,7 +62,7 @@ async def handle_start(message: Message) -> None:
     command = message.text or ""
     parts = command.split(maxsplit=1)
     start_payload = parts[1].strip() if len(parts) > 1 else ""
-    organization = await sync_to_async(resolve_organization)(start_payload)
+    organization = await sync_to_async(resolve_organization, thread_sensitive=False)(start_payload)
 
     if organization is None:
         await message.answer("Автомойка не найдена или временно недоступна.")
@@ -68,7 +74,7 @@ async def handle_start(message: Message) -> None:
         first_name=message.from_user.first_name or "",
         last_name=message.from_user.last_name or "",
     )
-    await sync_to_async(get_or_create_client_from_telegram)(telegram_user, organization)
+    await sync_to_async(get_or_create_client_from_telegram, thread_sensitive=False)(telegram_user, organization)
 
     await message.answer(
         "Здравствуйте! Нажмите кнопку ниже, чтобы открыть запись на автомойку.",
@@ -83,6 +89,5 @@ def create_dispatcher() -> Dispatcher:
 
 
 def create_bot() -> Bot:
-    if not settings.TELEGRAM_BOT_TOKEN:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
+    validate_bot_settings()
     return Bot(token=settings.TELEGRAM_BOT_TOKEN)

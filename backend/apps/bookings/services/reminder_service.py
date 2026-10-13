@@ -9,6 +9,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.telegram_bot.notifications import send_telegram_message
+
 from ..models import BLOCKING_BOOKING_STATUSES, BookingReminder, BookingReminderStatus
 from .booking_service import format_booking_message
 
@@ -60,8 +62,6 @@ def _reminder_prefix(kind: str) -> str:
 
 
 def send_booking_reminder(reminder_id: UUID | str, *, sender: ReminderSender | None = None, now=None) -> bool:
-    from apps.telegram_bot.notifications import send_telegram_message
-
     current_time = now or timezone.now()
     reminder_sender = sender or send_telegram_message
     delivery_error: ReminderDeliveryError | None = None

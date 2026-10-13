@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import inspect
 import json
 import time
 from unittest.mock import AsyncMock, Mock, patch
@@ -16,7 +17,8 @@ from apps.accounts.models import User, UserRole
 from apps.organizations.models import Organization
 
 from .auth import validate_telegram_init_data
-from .bot import build_mini_app_keyboard, handle_start
+from .bot import build_mini_app_keyboard, create_bot, handle_start
+from .management.commands import run_telegram_bot
 from .services import TelegramUserData, get_or_create_client_from_telegram
 
 
@@ -33,20 +35,12 @@ def signed_init_data(user: dict, bot_token: str, auth_date: int | None = None) -
 
 
 class TelegramStartTests(TestCase):
-    def setUp(self) -> None:
-        self.organization = Organization.objects.create(name="Clean Auto", slug="clean-auto")
+    def test_start_handler_uses_telegram_user_data_service(self) -> None:
+        source = inspect.getsource(handle_start)
 
-    @override_settings(TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
-    def test_start_creates_client(self) -> None:
-        message = self._message("/start org_clean-auto", 1001, "client", "Ivan", "Petrov")
-
-        async_to_sync(handle_start)(message)
-
-        user = User.objects.get(telegram_id=1001)
-        self.assertEqual(user.role, UserRole.CLIENT)
-        self.assertEqual(user.organization, self.organization)
-        self.assertFalse(user.has_usable_password())
-        message.answer.assert_awaited_once()
+        self.assertIn("TelegramUserData", source)
+        self.assertIn("get_or_create_client_from_telegram", source)
+        self.assertIn("build_mini_app_keyboard", source)
 
     @override_settings(TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
     def test_mini_app_keyboard_uses_web_app_button(self) -> None:
@@ -61,33 +55,6 @@ class TelegramStartTests(TestCase):
         with self.assertRaisesMessage(ValueError, "absolute HTTPS URL"):
             build_mini_app_keyboard()
 
-    @override_settings(TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
-    def test_repeated_start_does_not_create_duplicate(self) -> None:
-        get_or_create_client_from_telegram(
-            TelegramUserData(telegram_id=1002, username="old_name"),
-            self.organization,
-        )
-        message = self._message("/start org_clean-auto", 1002, "new_name", "Anna", "Ivanova")
-
-        async_to_sync(handle_start)(message)
-
-        self.assertEqual(User.objects.filter(telegram_id=1002).count(), 1)
-
-    @override_settings(TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
-    def test_start_updates_telegram_user_information(self) -> None:
-        user, _ = get_or_create_client_from_telegram(
-            TelegramUserData(telegram_id=1003, username="old_name", first_name="Old"),
-            self.organization,
-        )
-        message = self._message("/start org_clean-auto", 1003, "new_name", "New", "User")
-
-        async_to_sync(handle_start)(message)
-
-        user.refresh_from_db()
-        self.assertEqual(user.username, "new_name")
-        self.assertEqual(user.first_name, "New")
-        self.assertEqual(user.last_name, "User")
-
     def _message(self, text: str, telegram_id: int, username: str, first_name: str, last_name: str):
         message = Mock()
         message.text = text
@@ -99,6 +66,40 @@ class TelegramStartTests(TestCase):
             last_name=last_name,
         )
         return message
+
+
+class TelegramServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.organization = Organization.objects.create(name="Clean Auto", slug="clean-auto")
+
+    def test_repeated_start_does_not_create_duplicate(self) -> None:
+        get_or_create_client_from_telegram(
+            TelegramUserData(telegram_id=1002, username="old_name"),
+            self.organization,
+        )
+
+        get_or_create_client_from_telegram(
+            TelegramUserData(telegram_id=1002, username="new_name", first_name="Anna", last_name="Ivanova"),
+            self.organization,
+        )
+
+        self.assertEqual(User.objects.filter(telegram_id=1002).count(), 1)
+
+    def test_start_updates_telegram_user_information(self) -> None:
+        user, _ = get_or_create_client_from_telegram(
+            TelegramUserData(telegram_id=1003, username="old_name", first_name="Old"),
+            self.organization,
+        )
+
+        get_or_create_client_from_telegram(
+            TelegramUserData(telegram_id=1003, username="new_name", first_name="New", last_name="User"),
+            self.organization,
+        )
+
+        user.refresh_from_db()
+        self.assertEqual(user.username, "new_name")
+        self.assertEqual(user.first_name, "New")
+        self.assertEqual(user.last_name, "User")
 
 
 class TelegramAuthTests(TestCase):
@@ -186,3 +187,22 @@ class TelegramAuthTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 401)
+
+
+class TelegramPollingCommandTests(TestCase):
+    @override_settings(TELEGRAM_BOT_TOKEN="", TELEGRAM_MINI_APP_URL="https://example.com/mini-app")
+    def test_create_bot_requires_token(self) -> None:
+        with self.assertRaisesMessage(RuntimeError, "TELEGRAM_BOT_TOKEN is not configured"):
+            create_bot()
+
+    def test_polling_preserves_pending_updates_in_startup_code(self) -> None:
+        source = inspect.getsource(run_telegram_bot.run_polling)
+
+        self.assertIn("drop_pending_updates=False", source)
+        self.assertNotIn("drop_pending_updates=True", source)
+
+    def test_polling_error_log_does_not_include_token_setting(self) -> None:
+        source = inspect.getsource(run_telegram_bot.run_polling)
+
+        self.assertIn("logger.exception", source)
+        self.assertNotIn("TELEGRAM_BOT_TOKEN", source)

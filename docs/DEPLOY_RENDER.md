@@ -8,16 +8,17 @@ Do not commit real tokens, passwords, private keys, or production URLs. Fill sec
 
 As of 2026-10-12, Render free instances are available for web services, static sites, Render Postgres, and Render Key Value. Background Workers do not support the Free instance type. That means a fully working production deployment with Telegram polling, Celery Worker, and Celery Beat requires paid worker services, or an owner-approved alternative outside Render.
 
-The checked-in `render.yaml` intentionally creates only the free-compatible core:
+The checked-in `render.yaml` includes the core services and the Telegram polling worker:
 
 - `multiauto-backend` - Django API web service, Docker runtime.
 - `multiauto-mini-app` - static Vite Mini App.
+- `multiauto-telegram-bot` - Background Worker for Telegram long polling.
 - `multiauto-postgres` - Render Postgres.
 - `multiauto-redis` - Render Key Value for Celery/Redis-compatible broker.
 
-Do not create paid worker services until the project owner explicitly approves the cost.
+Do not apply or create paid worker services until the project owner explicitly approves the cost. If you need a no-cost Blueprint apply, remove or skip the worker service in Render before applying.
 
-## Why workers are not in render.yaml
+## Worker model
 
 MultiAuto needs three continuous non-HTTP processes for full production behavior:
 
@@ -25,7 +26,7 @@ MultiAuto needs three continuous non-HTTP processes for full production behavior
 - Celery Worker: `celery -A config worker -l info`
 - Celery Beat: `celery -A config beat -l info --pidfile=`
 
-Render Background Workers are the right service type for these commands, but they are not available on the free instance type. Putting them in `render.yaml` with a paid plan would create billable services during Blueprint apply, so the active Blueprint does not include them.
+Render Background Workers are the right service type for these commands, but they are not available on the free instance type. The active Blueprint includes only the Telegram worker because `/start` requires a running polling process. Celery Worker and Celery Beat still require separate paid Background Workers before reminders and scheduled status sweeps are fully production-ready.
 
 ## Blueprint behavior
 
@@ -67,7 +68,7 @@ RUN_MIGRATIONS=false
 
 Set these when Render prompts for variables marked `sync: false`:
 
-- `ALLOWED_HOSTS`: backend host, for example `multiauto-backend.onrender.com`.
+- `ALLOWED_HOSTS`: backend host without scheme. The Blueprint default is `multiauto-backend.onrender.com`; replace it if Render creates a different backend hostname.
 - `CORS_ALLOWED_ORIGINS`: frontend HTTPS origin, for example `https://multiauto-mini-app.onrender.com`.
 - `CSRF_TRUSTED_ORIGINS`: same HTTPS frontend origin.
 - `TELEGRAM_BOT_TOKEN`: BotFather token. Required by worker services and notification tasks.
@@ -80,11 +81,51 @@ Render generates `SECRET_KEY`. `DATABASE_URL`, `CELERY_BROKER_URL`, and `CELERY_
 
 `VITE_API_URL` is a build-time Vite variable. If the backend URL changes, redeploy the static Mini App so the bundle is rebuilt.
 
-## Paid worker services after approval
+## Telegram polling worker
 
-After the owner approves paid Background Workers, create exactly these services manually or add them to `render.yaml` in a separate approved change.
+The Telegram bot uses long polling, not webhook. Django does not expose a Telegram webhook route. The worker must run exactly one process with:
 
-Use the same repository, branch, Dockerfile path, and context for all three:
+```bash
+python manage.py run_telegram_bot
+```
+
+The command removes any active webhook with `drop_pending_updates=False`, then starts aiogram polling. Pending Telegram updates are intentionally preserved across deploys and restarts.
+
+The `multiauto-telegram-bot` service in `render.yaml` uses:
+
+- Runtime: Docker
+- Service type: Background Worker
+- Plan: `starter` or another owner-approved paid worker plan
+- Dockerfile path: `./backend/Dockerfile`
+- Docker context: `.`
+- Docker command: `python manage.py run_telegram_bot`
+- Instances: exactly 1
+
+Required variables:
+
+- `DJANGO_SETTINGS_MODULE=config.settings.production`
+- `SECRET_KEY`: same value as backend
+- `DEBUG=False`
+- `ALLOWED_HOSTS`: same backend host value
+- `DATABASE_URL`: same Render Postgres connection string as backend
+- `TELEGRAM_BOT_TOKEN`: BotFather token
+- `TELEGRAM_BOT_USERNAME`: bot username
+- `TELEGRAM_MINI_APP_URL`: public HTTPS Mini App URL
+- `TELEGRAM_DEFAULT_ORGANIZATION_SLUG`: active organization slug, for example `clean-auto`
+- `RUN_MIGRATIONS=false`
+- `RUN_COLLECTSTATIC=false`
+
+Redis is not required by the polling process itself. Do not set `CELERY_BROKER_URL` or `CELERY_RESULT_BACKEND` on the Telegram worker unless another imported code path starts using Redis.
+
+Check the worker logs after deploy. A healthy startup includes `Starting Telegram bot polling.`. On shutdown, the command logs that the Telegram HTTP session was closed. Logs must not include the bot token.
+
+Do not scale Telegram polling above one instance. Multiple pollers using one bot token compete for updates and can produce unstable behavior.
+
+## Celery worker services after approval
+
+After the owner approves additional paid Background Workers, create exactly these Celery services manually or add them to `render.yaml` in a separate approved change.
+
+Use the same repository, branch, Dockerfile path, and context:
 
 - Runtime: Docker
 - Dockerfile path: `./backend/Dockerfile`
@@ -100,13 +141,6 @@ Use the same repository, branch, Dockerfile path, and context for all three:
   - `RUN_MIGRATIONS=false`
   - `RUN_COLLECTSTATIC=false`
 
-Telegram bot worker:
-
-- Service type: Background Worker
-- Instances: exactly 1
-- Docker command: `python manage.py run_telegram_bot`
-- Additional variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_MINI_APP_URL`, `TELEGRAM_DEFAULT_ORGANIZATION_SLUG`
-
 Celery Worker:
 
 - Service type: Background Worker
@@ -120,7 +154,7 @@ Celery Beat:
 - Docker command: `celery -A config beat -l info --pidfile=`
 - Additional variables: `BOOKING_REMINDER_POLL_SECONDS`, `BOOKING_STATUS_SWEEP_SECONDS`
 
-Do not scale Telegram polling or Celery Beat above one instance.
+Do not scale Celery Beat above one instance.
 
 ## Deployment order
 
@@ -140,9 +174,11 @@ Do not scale Telegram polling or Celery Beat above one instance.
    Invoke-WebRequest https://YOUR_FRONTEND_HOST/
    ```
 
-7. Only after paid worker approval, create Telegram bot, Celery Worker, and Celery Beat services.
+7. Only after paid worker approval, create or apply the Telegram bot worker.
 8. In BotFather, set the Mini App URL to the Render static site URL.
-9. Send `/start org_<slug>` to the bot and test Telegram Mini App auth, booking creation, cancellation, and reminders.
+9. Check the Telegram worker logs for `Starting Telegram bot polling.`.
+10. Send `/start org_<slug>` to the bot and test Telegram Mini App auth.
+11. Only after separate paid worker approval, create Celery Worker and Celery Beat, then test booking reminders.
 
 ## Manual data/setup commands
 
@@ -165,6 +201,8 @@ python manage.py seed_demo_data --slug clean-auto
 - `DisallowedHost`: add the backend host to `ALLOWED_HOSTS`.
 - CORS/CSRF errors: check exact `https://` origins in `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`.
 - Mini App calls localhost: set `VITE_API_URL` on the static site and redeploy it.
-- Bot does not answer: verify the paid Telegram Background Worker exists, has one instance, and has `TELEGRAM_BOT_TOKEN`.
+- Bot does not answer: verify the paid Telegram Background Worker exists, has one instance, has `TELEGRAM_BOT_TOKEN`, and logs `Starting Telegram bot polling.`.
+- Telegram reports pending updates: verify `getWebhookInfo` has `url: ""`, then verify the worker is running. The polling command preserves pending updates and does not call `drop_pending_updates=True`.
+- aiogram/Pydantic import fails: capture the first traceback line with the final exception type from the Telegram worker logs. The web backend should not import `apps.telegram_bot.bot` during URLconf loading; notification delivery imports it only when a Telegram message is actually sent.
 - Reminders are not sent: verify paid Celery Worker and Celery Beat exist, and Redis/Key Value URLs are set.
 - Data disappears: confirm production uses Render Postgres via `DATABASE_URL`, not SQLite or container local files.
