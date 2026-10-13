@@ -30,7 +30,7 @@ export default function App() {
     return (
       <StateView
         title="Нужен Telegram"
-        description={auth.error || 'Откройте приложение из Telegram-бота.'}
+        description={formatAuthError(auth.error || 'Откройте приложение из Telegram-бота.', auth.debugInfo)}
         actionLabel="Повторить"
         onAction={auth.retry}
       />
@@ -41,7 +41,7 @@ export default function App() {
     return (
       <StateView
         title="Не удалось загрузить данные"
-        description={auth.error || 'Попробуйте открыть Mini App еще раз.'}
+        description={formatAuthError(auth.error || 'Попробуйте открыть Mini App еще раз.', auth.debugInfo)}
         actionLabel="Повторить"
         onAction={auth.retry}
       />
@@ -66,6 +66,18 @@ export default function App() {
       {page === 'profile' ? <ProfilePage user={auth.user} /> : null}
     </AppLayout>
   );
+}
+
+function formatAuthError(message: string, debugInfo: ReturnType<typeof useAuth>['debugInfo']): string {
+  return [
+    message,
+    `apiUrl: ${debugInfo.apiUrl}`,
+    `isTelegram: ${debugInfo.isTelegram ? 'yes' : 'no'}`,
+    `initDataLength: ${debugInfo.initDataLength}`,
+    `startParam: ${debugInfo.startParam || '(empty)'}`,
+    `storedToken: ${debugInfo.hasStoredToken ? 'yes' : 'no'}`,
+    `step: ${debugInfo.lastStep}`,
+  ].join('\n');
 }
 
 function getAdminPage(pathname: string): AdminPage {

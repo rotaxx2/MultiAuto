@@ -21,6 +21,10 @@ export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export function getApiUrl(): string {
+  return API_URL || '(same origin)';
+}
+
 export function setStoredToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
