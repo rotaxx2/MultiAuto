@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { authenticateWithTelegram } from '../api/auth';
 import { getMyProfile } from '../api/profile';
 import type { User } from '../types/api';
-import { ApiError, getStoredToken } from '../api/client';
+import { ApiError, clearStoredToken, getStoredToken } from '../api/client';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthorized' | 'error';
 
@@ -38,11 +38,9 @@ export function useAuth(initData: string, startParam: string, isTelegram: boolea
           setUser(await getMyProfile());
           setStatus('authenticated');
         } catch (caught) {
-          if (caught instanceof ApiError && caught.status === 401) {
-            await authenticateFromTelegram();
-            return;
-          }
-          throw caught;
+          clearStoredToken();
+          await authenticateFromTelegram();
+          return;
         }
         return;
       }
