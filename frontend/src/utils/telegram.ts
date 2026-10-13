@@ -13,7 +13,13 @@ export function getTelegramUser(): TelegramWebAppUser | null {
 }
 
 export function getTelegramStartParam(): string {
-  return getTelegramWebApp()?.initDataUnsafe?.start_param ?? '';
+  const telegramStartParam = getTelegramWebApp()?.initDataUnsafe?.start_param;
+  if (telegramStartParam) {
+    return telegramStartParam;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return params.get('start_param') ?? params.get('tgWebAppStartParam') ?? '';
 }
 
 export function initializeTelegramWebApp(): void {
